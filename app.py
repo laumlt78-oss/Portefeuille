@@ -30,42 +30,49 @@ tickers_liste = df_p['Ticker'].tolist()
 
 # --- RÉCUPÉRATION DES COURS ET LOGIQUE D'ALERTE ---
 if tickers_liste:
-    # On récupère les données des dernières 2 heures pour comparer le prix
-    flux = yf.download(tickers_liste, period="2h", interval="1h")['Close']
+    # On télécharge un peu plus de données (1 jour complet) pour être sûr d'avoir un prix
+    flux = yf.download(tickers_liste, period="1d", interval="1m")['Close']
     
     lignes_finales = []
 
     for _, row in df_p.iterrows():
         ticker = row['Ticker']
-        # Prix actuel et prix il y a 1 heure
-        prix_actuel = flux[ticker].iloc[-1]
-        prix_precedent = flux[ticker].iloc[0]
         
-        # 1. CALCUL DE LA CHUTE RAPIDE (5% en 1h)
-        variation_1h = ((prix_actuel / prix_precedent) - 1) * 100
-        if variation_1h <= -5:
-            envoyer_alerte(f"⚠️ CHUTE RAPIDE : {row['Nom']} a perdu {variation_1h:.2f}% en 1h !")
+        # Sécurité : on vérifie si le ticker existe dans les données reçues
+        if ticker in flux.columns:
+            serie_prix = flux[ticker].dropna() # On enlève les cases vides
+            
+            if not serie_prix.empty:
+                prix_actuel = serie_prix.iloc[-1]
+                # On compare avec le prix d'il y a environ 60 minutes (si disponible)
+                prix_precedent = serie_prix.iloc[0] if len(serie_prix) > 60 else serie_prix.iloc[0]
+                
+                # 1. CALCUL DE LA CHUTE RAPIDE
+                variation_1h = ((prix_actuel / prix_precedent) - 1) * 100
+                if variation_1h <= -5:
+                    envoyer_alerte(f"⚠️ CHUTE : {row['Nom']} ({variation_1h:.2f}%)")
 
-        # 2. CALCULS AUTOMATIQUES
-        valorisation = prix_actuel * row['Qté']
-        seuil_bas = row['PRU'] * 0.80
-        performance = ((prix_actuel / row['PRU']) - 1) * 100
+                # 2. CALCULS AUTOMATIQUES
+                valorisation = prix_actuel * row['Qté']
+                seuil_bas = row['PRU'] * 0.80
+                performance = ((prix_actuel / row['PRU']) - 1) * 100
 
-        # 3. ALERTE SEUILS (Haut et Bas)
-        if prix_actuel <= seuil_bas:
-            envoyer_alerte(f"🚨 SEUIL BAS ATTEINT : {row['Nom']} est à {prix_actuel:.2f}€ (Seuil: {seuil_bas:.2f}€)")
-        elif prix_actuel >= row['Seuil_Haut']:
-            envoyer_alerte(f"💰 SEUIL HAUT ATTEINT : {row['Nom']} est à {prix_actuel:.2f}€")
+                # 3. ALERTE SEUILS
+                if prix_actuel <= seuil_bas:
+                    envoyer_alerte(f"🚨 SEUIL BAS : {row['Nom']} à {prix_actuel:.2f}€")
+                elif prix_actuel >= row['Seuil_Haut']:
+                    envoyer_alerte(f"💰 SEUIL HAUT : {row['Nom']} à {prix_actuel:.2f}€")
 
-        lignes_finales.append({
-            "Nom": row['Nom'],
-            "Prix Actuel": round(prix_actuel, 2),
-            "Variation 1h": f"{variation_1h:.2f}%",
-            "Valorisation": round(valorisation, 2),
-            "Perf Total": f"{performance:.2f}%",
-            "Seuil Bas (-20%)": round(seuil_bas, 2),
-            "Seuil Haut": row['Seuil_Haut']
-        })
+                lignes_finales.append({
+                    "Nom": row['Nom'],
+                    "Prix Actuel": round(float(prix_actuel), 2),
+                    "Variation": f"{variation_1h:.2f}%",
+                    "Valorisation": round(float(valorisation), 2),
+                    "Perf Total": f"{performance:.2f}%",
+                    "Seuil Bas (-20%)": round(float(seuil_bas), 2),
+                    "Seuil Haut": row['Seuil_Haut']
+                })
 
     # Affichage du tableau
+
     st.table(pd.DataFrame(lignes_finales))
