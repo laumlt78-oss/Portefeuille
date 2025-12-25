@@ -72,25 +72,44 @@ with st.sidebar:
                 sauvegarder_donnees(st.session_state.mon_portefeuille)
                 st.rerun()
 
-# --- 4. CALCULS PRÉALABLES ---
+# --- 4. CALCULS GLOBAUX ---
 if st.session_state.mon_portefeuille:
     donnees_affichees = []
-    total_portefeuille = 0
+    total_actuel = 0
+    total_achat_initial = 0
 
     for act in st.session_state.mon_portefeuille:
         try:
             t = yf.Ticker(act['Ticker'])
             prix = t.fast_info['lastPrice']
-            valeur = prix * act['Qté']
-            total_portefeuille += valeur
-            donnees_affichees.append({"act": act, "prix": prix, "valeur": valeur})
+            valeur_actuelle = prix * act['Qté']
+            valeur_achat = act['PRU'] * act['Qté']
+            
+            total_actuel += valeur_actuelle
+            total_achat_initial += valeur_achat
+            
+            donnees_affichees.append({"act": act, "prix": prix, "valeur": valeur_actuelle})
         except:
             donnees_affichees.append({"act": act, "prix": 0, "valeur": 0})
 
-    st.metric("VALEUR TOTALE DU PORTEFEUILLE", f"{total_portefeuille:.2f} €")
+    # --- AFFICHAGE DU RÉSUMÉ (KPI) ---
+    pv_globale_euros = total_actuel - total_achat_initial
+    pv_globale_pct = (pv_globale_euros / total_achat_initial * 100) if total_achat_initial > 0 else 0
+
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric("VALEUR TOTALE", f"{total_actuel:.2f} €")
+    with col_m2:
+        # Le paramètre 'delta' gère automatiquement le vert/rouge
+        st.metric(
+            "PLUS/MOINS-VALUE TOTALE", 
+            f"{pv_globale_euros:.2f} €", 
+            delta=f"{pv_globale_pct:+.2f} %"
+        )
+    
     st.divider()
 
-    # --- 5. AFFICHAGE DES CARTES ---
+    # --- 5. AFFICHAGE DES CARTES INDIVIDUELLES ---
     for i, item in enumerate(donnees_affichees):
         act = item['act']
         prix = item['prix']
@@ -100,22 +119,16 @@ if st.session_state.mon_portefeuille:
             perf_pct = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
             plus_value_euros = (prix - act['PRU']) * act['Qté']
             seuil_bas = act['PRU'] * 0.80
-            part_pourtentage = (valeur / total_portefeuille) * 100 if total_portefeuille > 0 else 0
+            part_pourtentage = (valeur / total_actuel) * 100 if total_actuel > 0 else 0
             
-            # Formatage du bandeau avec couleur pour la Plus/Moins Value
             signe = "+" if plus_value_euros >= 0 else ""
-            label_pv = f"{signe}{plus_value_euros:.2f}€"
+            header_text = f"**{act['Nom']}** | {prix:.2f}€ | {perf_pct:+.2f}% | {signe}{plus_value_euros:.2f}€"
             
-            # Utilisation de Markdown pour simuler de la couleur dans le titre de l'expander
-            header_text = f"**{act['Nom']}** | {prix:.2f}€ | {perf_pct:+.2f}% | {label_pv}"
-            
-            # Création de la carte
             with st.expander(header_text):
-                # Un petit indicateur de couleur visuel à l'intérieur
                 if plus_value_euros >= 0:
-                    st.success(f"Hausse de {plus_value_euros:.2f} €")
+                    st.success(f"Gain latent : {plus_value_euros:.2f} €")
                 else:
-                    st.error(f"Baisse de {abs(plus_value_euros):.2f} €")
+                    st.error(f"Perte latente : {abs(plus_value_euros):.2f} €")
 
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
@@ -137,16 +150,12 @@ if st.session_state.mon_portefeuille:
                         sauvegarder_donnees(st.session_state.mon_portefeuille)
                         st.rerun()
 
-                # Logique Pushover
+                # Alertes Pushover
                 if prix <= seuil_bas:
-                    envoyer_alerte(f"🚨 ALERTE BASSE : {act['Nom']} ({prix:.2f}€)")
+                    envoyer_alerte(f"🚨 ALERTE : {act['Nom']} chute ({prix:.2f}€)")
                 if act['Seuil_Haut'] > 0 and prix >= act['Seuil_Haut']:
-                    envoyer_alerte(f"💰 OBJECTIF ATTEINT : {act['Nom']} ({prix:.2f}€)")
+                    envoyer_alerte(f"🎯 OBJECTIF : {act['Nom']} atteint ({prix:.2f}€)")
         else:
-            st.error(f"Erreur sur le Ticker {act['Ticker']}.")
+            st.error(f"Données indisponibles pour {act['Ticker']}")
 else:
     st.info("Utilisez la barre latérale pour ajouter vos titres.")
-
-
-
-
