@@ -104,16 +104,19 @@ if st.session_state.mon_portefeuille:
     st.metric("Valeur Totale", f"{total_portefeuille:.2f} €")
     st.table(df_final)
 
-    # --- 5. ACTUALITÉS ---
+# --- 5. ACTUALITÉS ---
     st.header("📰 Dernières Actualités")
-    for act in st.session_state.mon_portefeuille[:3]: # News pour les 3 premières actions
+    for act in st.session_state.mon_portefeuille[:3]: 
         tick = yf.Ticker(act['Ticker'])
-        news = tick.news
-        if news:
-            st.write(f"**{act['Nom']} :** {news[0]['title']}")
-            st.caption(f"Source: {news[0]['publisher']} - [Lien]({news[0]['link']})")
-
-    if st.button("🗑️ Réinitialiser"):
-        st.session_state.mon_portefeuille = []
-        if os.path.exists(FICHIER_DATA): os.remove(FICHIER_DATA)
-        st.rerun()
+        try:
+            news = tick.news
+            if news and len(news) > 0:
+                # On utilise .get() pour éviter que l'appli plante si 'title' ou 'link' manque
+                titre = news[0].get('title', 'Titre non disponible')
+                source = news[0].get('publisher', 'Source inconnue')
+                lien = news[0].get('link', '#')
+                
+                st.write(f"**{act['Nom']} :** {titre}")
+                st.caption(f"Source: {source} - [Lire l'article]({lien})")
+        except Exception as e:
+            st.write(f"Pas d'actualités récentes pour {act['Nom']}")
