@@ -5,9 +5,9 @@ import os
 import requests
 
 # --- 1. CONFIGURATION PUSHOVER ---
-# Remplacez par vos vrais codes entre les guillemets
-USER_KEY = "VOTRE_USER_KEY_ICI"
-API_TOKEN = "VOTRE_API_TOKEN_ICI"
+USER_KEY = "uy24daw7gs19ivfhwh7wgsy8amajc8"
+API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
+
 
 def envoyer_alerte(message):
     if USER_KEY != "VOTRE_USER_KEY_ICI":
@@ -174,3 +174,4 @@ if st.session_state.mon_portefeuille:
 
 else:
     st.info("👋 Bienvenue ! Utilisez la barre à gauche pour ajouter votre première action.")
+
