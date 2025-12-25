@@ -1,78 +1,62 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import requests # Nécessaire pour envoyer l'alerte
+import requests
 
 # --- CONFIGURATION PUSHOVER ---
-# Remplacez ces codes par les vôtres reçus sur Pushover.net
 PUSHOVER_USER_KEY = "VOTRE_USER_KEY"
 PUSHOVER_API_TOKEN = "VOTRE_API_TOKEN"
 
 def envoyer_alerte(message):
-    payload = {
-        "token": PUSHOVER_API_TOKEN,
-        "user": PUSHOVER_USER_KEY,
-        "message": message
-    }
-    requests.post("https://api.pushover.net/1/messages.json", data=payload)
+    if PUSHOVER_USER_KEY != "VOTRE_USER_KEY": # Évite d'envoyer si non configuré
+        payload = {"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": message}
+        requests.post("https://api.pushover.net/1/messages.json", data=payload)
 
 st.set_page_config(page_title="Mon Portefeuille Pro", layout="wide")
-st.title("📈 Gestionnaire de Portefeuille & Alertes")
+st.title("📈 Mon Portefeuille (Marché Fermé Inclus)")
 
-# --- DONNÉES DU PORTEFEUILLE ---
+# --- DONNÉES ---
 data_portefeuille = [
     {"Nom": "LVMH", "Ticker": "MC.PA", "PRU": 700.0, "Qté": 5, "Seuil_Haut": 900.0},
     {"Nom": "Apple", "Ticker": "AAPL", "PRU": 150.0, "Qté": 10, "Seuil_Haut": 220.0}
 ]
 
-df_p = pd.DataFrame(data_portefeuille)
-tickers_liste = df_p['Ticker'].tolist()
+lignes_finales = []
 
-# --- RÉCUPÉRATION DES COURS ET LOGIQUE D'ALERTE ---
-if tickers_liste:
-    # On télécharge un peu plus de données (1 jour complet) pour être sûr d'avoir un prix
-    flux = yf.download(tickers_liste, period="1d", interval="1m")['Close']
+for action in data_portefeuille:
+    ticker_name = action['Ticker']
+    # On récupère les données historiques des 5 derniers jours pour être sûr d'avoir un prix
+    info_action = yf.Ticker(ticker_name)
+    historique = info_action.history(period="5d")
     
-    lignes_finales = []
-
-    for _, row in df_p.iterrows():
-        ticker = row['Ticker']
+    if not historique.empty:
+        # On prend le prix le plus récent disponible
+        prix_actuel = historique['Close'].iloc[-1]
+        prix_veille = historique['Close'].iloc[-2] if len(historique) > 1 else prix_actuel
         
-        # Sécurité : on vérifie si le ticker existe dans les données reçues
-        if ticker in flux.columns:
-            serie_prix = flux[ticker].dropna() # On enlève les cases vides
-            
-            if not serie_prix.empty:
-                prix_actuel = serie_prix.iloc[-1]
-                # On compare avec le prix d'il y a environ 60 minutes (si disponible)
-                prix_precedent = serie_prix.iloc[0] if len(serie_prix) > 60 else serie_prix.iloc[0]
-                
-                # 1. CALCUL DE LA CHUTE RAPIDE
-                variation_1h = ((prix_actuel / prix_precedent) - 1) * 100
-                if variation_1h <= -5:
-                    envoyer_alerte(f"⚠️ CHUTE : {row['Nom']} ({variation_1h:.2f}%)")
+        # Calculs
+        variation_journaliere = ((prix_actuel / prix_veille) - 1) * 100
+        valorisation = prix_actuel * action['Qté']
+        seuil_bas = action['PRU'] * 0.80
+        performance_totale = ((prix_actuel / action['PRU']) - 1) * 100
+        
+        # Logique d'alerte (seulement si variation brutale)
+        if variation_journaliere <= -5:
+            envoyer_alerte(f"⚠️ CHUTE : {action['Nom']} ({variation_journaliere:.2f}%)")
 
-                # 2. CALCULS AUTOMATIQUES
-                valorisation = prix_actuel * row['Qté']
-                seuil_bas = row['PRU'] * 0.80
-                performance = ((prix_actuel / row['PRU']) - 1) * 100
+        lignes_finales.append({
+            "Nom": action['Nom'],
+            "Prix Actuel": f"{prix_actuel:.2f} €",
+            "Var. Jour": f"{variation_journaliere:.2f}%",
+            "Valorisation": f"{valorisation:.2f} €",
+            "Perf. Totale": f"{performance_totale:.2f}%",
+            "Seuil Bas (-20%)": f"{seuil_bas:.2f} €",
+            "Seuil Haut": f"{action['Seuil_Haut']:.2f} €"
+        })
+    else:
+        st.error(f"Impossible de récupérer les données pour {ticker_name}")
 
-                # 3. ALERTE SEUILS
-                if prix_actuel <= seuil_bas:
-                    envoyer_alerte(f"🚨 SEUIL BAS : {row['Nom']} à {prix_actuel:.2f}€")
-                elif prix_actuel >= row['Seuil_Haut']:
-                    envoyer_alerte(f"💰 SEUIL HAUT : {row['Nom']} à {prix_actuel:.2f}€")
-
-                lignes_finales.append({
-                    "Nom": row['Nom'],
-                    "Prix Actuel": round(float(prix_actuel), 2),
-                    "Variation": f"{variation_1h:.2f}%",
-                    "Valorisation": round(float(valorisation), 2),
-                    "Perf Total": f"{performance:.2f}%",
-                    "Seuil Bas (-20%)": round(float(seuil_bas), 2),
-                    "Seuil Haut": row['Seuil_Haut']
-                })
-
-    # Affichage du tableau
-
-    st.table(pd.DataFrame(lignes_finales))
+# Affichage
+if lignes_finales:
+    df_final = pd.DataFrame(lignes_finales)
+    st.table(df_final)
