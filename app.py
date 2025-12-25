@@ -38,93 +38,108 @@ def sauvegarder_donnees(liste_actions):
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_donnees()
 
-st.title("📈 Assistant Portefeuille (Nom & ISIN)")
+st.title("📈 Suivi de Portefeuille")
 
 # --- 3. RECHERCHE ET AJOUT (SIDEBAR) ---
 with st.sidebar:
     st.header("🔍 Rechercher un titre")
     query = st.text_input("Saisissez Nom ou ISIN", placeholder="Ex: LVMH ou FR0000121014")
     
-    ticker_final = ""
-    nom_final = ""
-    
+    ticker_final, nom_final = "", ""
     if query:
         try:
-            # On utilise yf.Search qui gère aussi bien les noms que les ISIN
             s = yf.Search(query, max_results=5)
             if s.quotes:
                 options = {f"{q['shortname']} ({q['symbol']})": q['symbol'] for q in s.quotes}
                 selection = st.selectbox("Titres trouvés :", options.keys())
                 ticker_final = options[selection]
                 nom_final = selection.split(' (')[0]
-                st.success(f"Cible identifiée : {ticker_final}")
-            else:
-                st.warning("Aucun résultat. Essayez le Ticker directement.")
         except:
-            st.error("Moteur de recherche indisponible. Saisissez les infos manuellement.")
+            st.error("Moteur de recherche indisponible.")
 
     st.divider()
-    st.header("📝 Détails de la ligne")
     with st.form("ajout_form", clear_on_submit=True):
         f_nom = st.text_input("Nom de l'action", value=nom_final)
-        f_ticker = st.text_input("Ticker (Obligatoire)", value=ticker_final, help="Ex: MC.PA, TTE.PA, AAPL")
-        f_isin = st.text_input("Code ISIN (Optionnel)", placeholder="FR000...")
+        f_ticker = st.text_input("Ticker (Obligatoire)", value=ticker_final)
         f_pru = st.number_input("Prix de revient (PRU)", min_value=0.0, format="%.2f")
         f_qte = st.number_input("Quantité", min_value=1)
         f_haut = st.number_input("Seuil de vente (Haut)", min_value=0.0, format="%.2f")
-        
-        if st.form_submit_button("Ajouter au Portefeuille"):
+        if st.form_submit_button("Ajouter"):
             if f_ticker:
                 st.session_state.mon_portefeuille.append({
-                    "Nom": f_nom, "Ticker": f_ticker.upper(), "ISIN": f_isin,
-                    "PRU": f_pru, "Qté": f_qte, "Seuil_Haut": f_haut
+                    "Nom": f_nom, "Ticker": f_ticker.upper(), "PRU": f_pru, "Qté": f_qte, "Seuil_Haut": f_haut
                 })
                 sauvegarder_donnees(st.session_state.mon_portefeuille)
                 st.rerun()
-            else:
-                st.error("Le Ticker est indispensable pour récupérer le prix.")
 
-# --- 4. AFFICHAGE ET SUIVI ---
+# --- 4. CALCULS PRÉALABLES ---
 if st.session_state.mon_portefeuille:
+    donnees_affichees = []
     total_portefeuille = 0
-    
-    for i, act in enumerate(st.session_state.mon_portefeuille):
+
+    # On récupère d'abord tous les prix pour calculer le total
+    for act in st.session_state.mon_portefeuille:
         try:
             t = yf.Ticker(act['Ticker'])
-            # Récupération ultra-rapide du dernier prix
             prix = t.fast_info['lastPrice']
-            
             valeur = prix * act['Qté']
             total_portefeuille += valeur
-            perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
-            s_bas = act['PRU'] * 0.80
-            
-            # Affichage en "cartes"
-            with st.expander(f"**{act['Nom']}** | {prix:.2f}€ ({perf:+.2f}%)"):
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Valeur", f"{valeur:.2f}€")
-                c1.write(f"Ticker: {act['Ticker']}")
-                
-                c2.write(f"PRU: {act['PRU']:.2f}€")
-                c2.write(f"ISIN: {act.get('ISIN', 'N/A')}")
-                
-                if c3.button("🗑️ Supprimer", key=f"del_{i}"):
-                    st.session_state.mon_portefeuille.pop(i)
-                    sauvegarder_donnees(st.session_state.mon_portefeuille)
-                    st.rerun()
-                
-                # Alertes
-                if prix <= s_bas:
-                    st.error(f"🚨 ALERTE BASSE : -20% atteint ({s_bas:.2f}€)")
-                    envoyer_alerte(f"ALERTE : {act['Nom']} a chuté sous {s_bas:.2f}€")
-                if act['Seuil_Haut'] > 0 and prix >= act['Seuil_Haut']:
-                    st.success(f"💰 SEUIL HAUT : Objectif {act['Seuil_Haut']}€ atteint !")
-                    envoyer_alerte(f"OBJECTIF : {act['Nom']} est à {prix:.2f}€")
+            donnees_affichees.append({"act": act, "prix": prix, "valeur": valeur})
+        except:
+            donnees_affichees.append({"act": act, "prix": 0, "valeur": 0})
 
-        except Exception as e:
-            st.error(f"Erreur sur {act['Ticker']}: Vérifiez que le ticker est correct (ex: MC.PA pour Paris).")
-
+    # --- 5. AFFICHAGE DES CARTES ---
+    st.metric("VALEUR TOTALE DU PORTEFEUILLE", f"{total_portefeuille:.2f} €")
     st.divider()
-    st.metric("VALEUR TOTALE", f"{total_portefeuille:.2f} €")
+
+    for i, item in enumerate(donnees_affichees):
+        act = item['act']
+        prix = item['prix']
+        valeur = item['valeur']
+        
+        if prix > 0:
+            perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
+            seuil_bas = act['PRU'] * 0.80
+            part_pourtentage = (valeur / total_portefeuille) * 100 if total_portefeuille > 0 else 0
+            
+            # Affichage de l'entête de la carte
+            couleur_perf = "green" if perf >= 0 else "red"
+            with st.expander(f"**{act['Nom']}** : {prix:.2f}€ ({perf:+.2f}%)"):
+                
+                # Organisation en 4 colonnes pour plus de clarté
+                c1, c2, c3, c4 = st.columns(4)
+                
+                with c1:
+                    st.write("**Ma Position**")
+                    st.write(f"Quantité : {act['Qté']}")
+                    st.write(f"Valeur : {valeur:.2f}€")
+                
+                with c2:
+                    st.write("**Performances**")
+                    st.write(f"PRU : {act['PRU']:.2f}€")
+                    st.write(f"Part : **{part_pourtentage:.2f}%**")
+                
+                with c3:
+                    st.write("**Seuils d'Alerte**")
+                    st.write(f"Bas (-20%) : {seuil_bas:.2f}€")
+                    st.write(f"Haut (Vente) : {act['Seuil_Haut']:.2f}€")
+                
+                with c4:
+                    st.write("**Action**")
+                    if st.button("🗑️ Supprimer", key=f"del_{i}"):
+                        st.session_state.mon_portefeuille.pop(i)
+                        sauvegarder_donnees(st.session_state.mon_portefeuille)
+                        st.rerun()
+
+                # Alertes visuelles rapides
+                if prix <= seuil_bas:
+                    st.warning(f"⚠️ Seuil bas atteint ({seuil_bas:.2f}€)")
+                    envoyer_alerte(f"Alerte Basse : {act['Nom']}")
+                if act['Seuil_Haut'] > 0 and prix >= act['Seuil_Haut']:
+                    st.success(f"🎯 Objectif haut atteint ({act['Seuil_Haut']:.2f}€)")
+                    envoyer_alerte(f"Alerte Haute : {act['Nom']}")
+        else:
+            st.error(f"Erreur sur le Ticker {act['Ticker']}. Vérifiez l'orthographe.")
+
 else:
-    st.info("Utilisez la barre latérale pour rechercher et ajouter vos titres.")
+    st.info("Utilisez la barre latérale pour ajouter vos titres.")
