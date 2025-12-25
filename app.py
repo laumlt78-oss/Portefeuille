@@ -5,17 +5,12 @@ import os
 import requests
 
 # --- 1. CONFIGURATION PUSHOVER ---
-# Collez vos codes ici entre les guillemets
-USER_KEY = "uy24daw7gs19ivfhwh7wgsy8amajc8"
-API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
+USER_KEY = "VOTRE_USER_KEY_ICI"
+API_TOKEN = "VOTRE_API_TOKEN_ICI"
 
 def envoyer_alerte(message):
-    if USER_KEY != "uy24daw7gs19ivfhwh7wgsy8amajc8":
-        requests.post("https://api.pushover.net/1/messages.json", data={
-            "token": API_TOKEN,
-            "user": USER_KEY,
-            "message": message
-        })
+    if USER_KEY != "VOTRE_USER_KEY_ICI":
+        requests.post("https://api.pushover.net/1/messages.json", data={"token": API_TOKEN, "user": USER_KEY, "message": message})
 
 st.set_page_config(page_title="Mon Portefeuille Pro", layout="wide")
 
@@ -24,7 +19,8 @@ FICHIER_DATA = "portefeuille_data.csv"
 
 def charger_donnees():
     if os.path.exists(FICHIER_DATA):
-        return pd.read_csv(FICHIER_DATA).to_dict('records')
+        df = pd.read_csv(FICHIER_DATA)
+        return df.to_dict('records')
     return []
 
 def sauvegarder_donnees(liste_actions):
@@ -33,90 +29,90 @@ def sauvegarder_donnees(liste_actions):
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_donnees()
 
-st.title("📊 Gestionnaire Boursier Intelligent")
+st.title("🚀 Mon Assistant Boursier")
 
-# --- 3. FORMULAIRE (Sidebar) ---
+# --- 3. RECHERCHE INTELLIGENTE DE TICKER ---
 with st.sidebar:
-    st.header("➕ Paramètres")
+    st.header("🔍 Rechercher une Action")
+    recherche = st.text_input("Tapez le nom (ex: LVMH, Total, Apple)")
+    ticker_choisi = ""
+    nom_choisi = ""
+    
+    if recherche:
+        # On cherche les correspondances sur Yahoo Finance
+        suggestions = yf.utils.get_tickers_by_name(recherche)
+        if not suggestions.empty:
+            # On prépare une liste de choix lisible
+            choix = suggestions.apply(lambda x: f"{x['shortname']} ({x['symbol']} - {x['exchange']})", axis=1).tolist()
+            selection = st.selectbox("Choisissez l'action précise :", choix)
+            # On extrait le ticker du choix sélectionné
+            ticker_choisi = selection.split('(')[1].split(' -')[0]
+            nom_choisi = selection.split(' (')[0]
+            st.success(f"Ticker sélectionné : {ticker_choisi}")
+
+    st.divider()
+    
+    # --- 4. FORMULAIRE D'AJOUT ---
+    st.header("📝 Détails de la position")
     with st.form("ajout"):
-        nom = st.text_input("Nom de l'action", "LVMH")
-        ticker = st.text_input("Ticker (ex: MC.PA, TSLA)", "MC.PA")
-        isin = st.text_input("Code ISIN", "FR0000121014")
-        pru = st.number_input("Prix de revient (PRU)", value=0.0)
-        qte = st.number_input("Quantité", value=1)
-        s_haut = st.number_input("Seuil haut (Revente)", value=0.0)
+        f_nom = st.text_input("Nom de l'action", value=nom_choisi)
+        f_ticker = st.text_input("Ticker", value=ticker_choisi)
+        f_isin = st.text_input("Code ISIN (Optionnel)")
+        f_pru = st.number_input("Prix d'achat (PRU)", value=0.0)
+        f_qte = st.number_input("Quantité possédée", value=1)
+        f_haut = st.number_input("Objectif de vente (Seuil Haut)", value=0.0)
         
-        if st.form_submit_button("Enregistrer l'action"):
-            nouvelle = {
-                "Nom": nom, "Ticker": ticker.upper(), "ISIN": isin, 
-                "PRU": pru, "Qté": qte, "Seuil_Haut": s_haut
-            }
-            st.session_state.mon_portefeuille.append(nouvelle)
-            sauvegarder_donnees(st.session_state.mon_portefeuille)
-            st.rerun()
+        if st.form_submit_button("Ajouter au portefeuille"):
+            if f_ticker:
+                nouvelle = {"Nom": f_nom, "Ticker": f_ticker.upper(), "ISIN": f_isin, "PRU": f_pru, "Qté": f_qte, "Seuil_Haut": f_haut}
+                st.session_state.mon_portefeuille.append(nouvelle)
+                sauvegarder_donnees(st.session_state.mon_portefeuille)
+                st.rerun()
+            else:
+                st.error("Veuillez sélectionner un ticker.")
 
-# --- 4. CALCULS ET AFFICHAGE ---
+# --- 5. AFFICHAGE ET MODIFICATION ---
 if st.session_state.mon_portefeuille:
-    lignes = []
-    total_portefeuille = 0
+    total_v = 0
+    lignes_affichage = []
     
-    for act in st.session_state.mon_portefeuille:
-        tick = yf.Ticker(act['Ticker'])
-        df_tick = tick.history(period="5d")
+    st.subheader("📊 Mes Positions")
+    
+    # On parcourt avec l'index pour pouvoir supprimer/modifier précisément
+    for i, act in enumerate(st.session_state.mon_portefeuille):
+        # Récupération cours
+        tick_info = yf.Ticker(act['Ticker'])
+        hist = tick_info.history(period="5d")
         
-        if not df_tick.empty:
-            prix = df_tick['Close'].iloc[-1]
-            prix_precedent = df_tick['Close'].iloc[-2] if len(df_tick) > 1 else prix
+        if not hist.empty:
+            prix = hist['Close'].iloc[-1]
+            val = prix * act['Qté']
+            total_v += val
+            perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
+            s_bas = act['PRU'] * 0.80
             
-            # Calculs
-            val_totale = prix * act['Qté']
-            total_portefeuille += val_totale
-            perf_pct = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
-            plus_value = (prix - act['PRU']) * act['Qté']
-            s_bas = act['PRU'] * 0.80 # Seuil bas auto à -20%
-            chute_brutale = ((prix / prix_precedent) - 1) * 100
-            
-            # ALERTES PUSHOVER
-            if chute_brutale <= -5:
-                envoyer_alerte(f"⚠️ CHUTE BRUTALE : {act['Nom']} perd {chute_brutale:.2f}% !")
-            if prix <= s_bas:
-                envoyer_alerte(f"🚨 SEUIL BAS : {act['Nom']} est à {prix:.2f}€ (PRU -20%)")
-            if s_haut > 0 and prix >= s_haut:
-                envoyer_alerte(f"💰 SEUIL HAUT : {act['Nom']} est à {prix:.2f}€")
+            # Affichage en colonnes pour chaque ligne (mieux pour mobile)
+            col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
+            with col1:
+                st.write(f"**{act['Nom']}**")
+                st.caption(f"{act['Ticker']} | {act['ISIN']}")
+            with col2:
+                st.write(f"Prix: {prix:.2f}€")
+                st.write(f"PRU: {act['PRU']:.2f}€")
+            with col3:
+                st.write(f"Val: {val:.2f}€")
+                st.write(f"Perf: {perf:.2f}%")
+            with col4:
+                st.caption(f"Bas: {s_bas:.2f}€")
+                st.caption(f"Haut: {act['Seuil_Haut']:.2f}€")
+            with col5:
+                # Bouton de suppression unique pour cette ligne
+                if st.button("🗑️", key=f"del_{i}"):
+                    st.session_state.mon_portefeuille.pop(i)
+                    sauvegarder_donnees(st.session_state.mon_portefeuille)
+                    st.rerun()
+            st.divider()
 
-            lignes.append({
-                "ISIN": act['ISIN'],
-                "Nom": act['Nom'],
-                "Prix": f"{prix:.2f}€",
-                "PRU": f"{act['PRU']:.2f}€",
-                "Qté": act['Qté'],
-                "Valorisation": round(val_totale, 2),
-                "+/- Value": f"{plus_value:.2f}€",
-                "% Perf": f"{perf_pct:.2f}%",
-                "Seuil Bas (-20%)": f"{s_bas:.2f}€",
-                "Seuil Haut": f"{s_haut:.2f}€"
-            })
-
-    # Calcul du % du portefeuille
-    df_final = pd.DataFrame(lignes)
-    df_final["% Portefeuille"] = (df_final["Valorisation"] / total_portefeuille * 100).map("{:.2f}%".format)
-    
-    st.metric("Valeur Totale", f"{total_portefeuille:.2f} €")
-    st.table(df_final)
-
-# --- 5. ACTUALITÉS ---
-    st.header("📰 Dernières Actualités")
-    for act in st.session_state.mon_portefeuille[:3]: 
-        tick = yf.Ticker(act['Ticker'])
-        try:
-            news = tick.news
-            if news and len(news) > 0:
-                # On utilise .get() pour éviter que l'appli plante si 'title' ou 'link' manque
-                titre = news[0].get('title', 'Titre non disponible')
-                source = news[0].get('publisher', 'Source inconnue')
-                lien = news[0].get('link', '#')
-                
-                st.write(f"**{act['Nom']} :** {titre}")
-                st.caption(f"Source: {source} - [Lire l'article]({lien})")
-        except Exception as e:
-            st.write(f"Pas d'actualités récentes pour {act['Nom']}")
+    st.metric("Valeur Totale du Portefeuille", f"{total_v:.2f} €")
+else:
+    st.info("Recherchez une action dans le menu à gauche pour commencer.")
