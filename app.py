@@ -27,8 +27,7 @@ def charger_donnees():
         return []
     try:
         return pd.read_csv(FICHIER_DATA).to_dict('records')
-    except:
-        return []
+    except: return []
 
 def sauvegarder_donnees(liste_actions):
     if liste_actions:
@@ -39,78 +38,93 @@ def sauvegarder_donnees(liste_actions):
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_donnees()
 
-st.title("📈 Mon Portefeuille")
+st.title("📈 Assistant Portefeuille (Nom & ISIN)")
 
-# --- 3. AJOUT D'ACTION (SIDEBAR) ---
+# --- 3. RECHERCHE ET AJOUT (SIDEBAR) ---
 with st.sidebar:
-    st.header("➕ Ajouter une Action")
+    st.header("🔍 Rechercher un titre")
+    query = st.text_input("Saisissez Nom ou ISIN", placeholder="Ex: LVMH ou FR0000121014")
     
-    # Recherche facultative
-    recherche = st.text_input("Rechercher par nom (ex: Total)")
-    ticker_auto = ""
+    ticker_final = ""
+    nom_final = ""
     
-    if recherche:
+    if query:
         try:
-            # On essaye une méthode plus simple pour les suggestions
-            search = yf.Search(recherche, max_results=5)
-            if search.quotes:
-                choix = [f"{q['shortname']} ({q['symbol']})" for q in search.quotes]
-                selection = st.selectbox("Sélectionnez l'action :", choix)
-                ticker_auto = selection.split('(')[1].replace(')', '')
+            # On utilise yf.Search qui gère aussi bien les noms que les ISIN
+            s = yf.Search(query, max_results=5)
+            if s.quotes:
+                options = {f"{q['shortname']} ({q['symbol']})": q['symbol'] for q in s.quotes}
+                selection = st.selectbox("Titres trouvés :", options.keys())
+                ticker_final = options[selection]
+                nom_final = selection.split(' (')[0]
+                st.success(f"Cible identifiée : {ticker_final}")
+            else:
+                st.warning("Aucun résultat. Essayez le Ticker directement.")
         except:
-            st.warning("Recherche automatique indisponible. Entrez le Ticker à la main.")
+            st.error("Moteur de recherche indisponible. Saisissez les infos manuellement.")
 
     st.divider()
-    
+    st.header("📝 Détails de la ligne")
     with st.form("ajout_form", clear_on_submit=True):
-        f_nom = st.text_input("Nom de l'action", value=recherche if not ticker_auto else selection.split(' (')[0])
-        f_ticker = st.text_input("Ticker (ex: MC.PA, AAPL)", value=ticker_auto).upper()
-        f_pru = st.number_input("Prix d'achat (PRU)", min_value=0.0)
+        f_nom = st.text_input("Nom de l'action", value=nom_final)
+        f_ticker = st.text_input("Ticker (Obligatoire)", value=ticker_final, help="Ex: MC.PA, TTE.PA, AAPL")
+        f_isin = st.text_input("Code ISIN (Optionnel)", placeholder="FR000...")
+        f_pru = st.number_input("Prix de revient (PRU)", min_value=0.0, format="%.2f")
         f_qte = st.number_input("Quantité", min_value=1)
-        f_haut = st.number_input("Seuil Haut (Vente)", min_value=0.0)
+        f_haut = st.number_input("Seuil de vente (Haut)", min_value=0.0, format="%.2f")
         
-        if st.form_submit_button("Enregistrer"):
+        if st.form_submit_button("Ajouter au Portefeuille"):
             if f_ticker:
                 st.session_state.mon_portefeuille.append({
-                    "Nom": f_nom, "Ticker": f_ticker, "PRU": f_pru, "Qté": f_qte, "Seuil_Haut": f_haut
+                    "Nom": f_nom, "Ticker": f_ticker.upper(), "ISIN": f_isin,
+                    "PRU": f_pru, "Qté": f_qte, "Seuil_Haut": f_haut
                 })
                 sauvegarder_donnees(st.session_state.mon_portefeuille)
                 st.rerun()
+            else:
+                st.error("Le Ticker est indispensable pour récupérer le prix.")
 
-# --- 4. AFFICHAGE ---
+# --- 4. AFFICHAGE ET SUIVI ---
 if st.session_state.mon_portefeuille:
-    total_val = 0
+    total_portefeuille = 0
+    
     for i, act in enumerate(st.session_state.mon_portefeuille):
         try:
-            # On demande les données
             t = yf.Ticker(act['Ticker'])
-            # On utilise fast_info pour éviter les lenteurs de history()
+            # Récupération ultra-rapide du dernier prix
             prix = t.fast_info['lastPrice']
             
-            val = prix * act['Qté']
-            total_val += val
+            valeur = prix * act['Qté']
+            total_portefeuille += valeur
             perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
+            s_bas = act['PRU'] * 0.80
             
-            with st.expander(f"**{act['Nom']}** : {prix:.2f}€ ({perf:+.2f}%)"):
+            # Affichage en "cartes"
+            with st.expander(f"**{act['Nom']}** | {prix:.2f}€ ({perf:+.2f}%)"):
                 c1, c2, c3 = st.columns(3)
-                c1.write(f"Valeur: {val:.2f}€")
+                c1.metric("Valeur", f"{valeur:.2f}€")
+                c1.write(f"Ticker: {act['Ticker']}")
+                
                 c2.write(f"PRU: {act['PRU']:.2f}€")
+                c2.write(f"ISIN: {act.get('ISIN', 'N/A')}")
+                
                 if c3.button("🗑️ Supprimer", key=f"del_{i}"):
                     st.session_state.mon_portefeuille.pop(i)
                     sauvegarder_donnees(st.session_state.mon_portefeuille)
                     st.rerun()
                 
-                # Alertes (visuelles et Push)
-                if prix <= act['PRU'] * 0.8:
-                    st.error("🚨 SEUIL BAS ATTEINT (-20%)")
-                    envoyer_alerte(f"Alerte Basse: {act['Nom']}")
+                # Alertes
+                if prix <= s_bas:
+                    st.error(f"🚨 ALERTE BASSE : -20% atteint ({s_bas:.2f}€)")
+                    envoyer_alerte(f"ALERTE : {act['Nom']} a chuté sous {s_bas:.2f}€")
                 if act['Seuil_Haut'] > 0 and prix >= act['Seuil_Haut']:
-                    st.success("💰 OBJECTIF ATTEINT !")
-                    envoyer_alerte(f"Objectif atteint: {act['Nom']}")
-        except:
-            st.error(f"Impossible de lire le ticker: {act['Ticker']}")
+                    st.success(f"💰 SEUIL HAUT : Objectif {act['Seuil_Haut']}€ atteint !")
+                    envoyer_alerte(f"OBJECTIF : {act['Nom']} est à {prix:.2f}€")
+
+        except Exception as e:
+            st.error(f"Erreur sur {act['Ticker']}: Vérifiez que le ticker est correct (ex: MC.PA pour Paris).")
 
     st.divider()
-    st.metric("TOTAL PORTEFEUILLE", f"{total_val:.2f} €")
+    st.metric("VALEUR TOTALE", f"{total_portefeuille:.2f} €")
 else:
-    st.info("Utilisez le menu à gauche pour ajouter votre première action.")
+    st.info("Utilisez la barre latérale pour rechercher et ajouter vos titres.")
