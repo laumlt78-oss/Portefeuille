@@ -18,18 +18,22 @@ st.set_page_config(page_title="Mon Portefeuille Pro", layout="wide")
 FICHIER_DATA = "portefeuille_data.csv"
 
 def charger_donnees():
-    if os.path.exists(FICHIER_DATA):
-        df = pd.read_csv(FICHIER_DATA)
-        return df.to_dict('records')
+    # On vérifie si le fichier existe ET s'il n'est pas vide
+    if os.path.exists(FICHIER_DATA) and os.path.getsize(FICHIER_DATA) > 0:
+        try:
+            df = pd.read_csv(FICHIER_DATA)
+            return df.to_dict('records')
+        except Exception:
+            return [] # En cas d'erreur de lecture, on renvoie une liste vide
     return []
 
 def sauvegarder_donnees(liste_actions):
-    pd.DataFrame(liste_actions).to_csv(FICHIER_DATA, index=False)
-
-if 'mon_portefeuille' not in st.session_state:
-    st.session_state.mon_portefeuille = charger_donnees()
-
-st.title("🚀 Mon Assistant Boursier")
+    if liste_actions: # On ne sauvegarde que s'il y a des actions
+        pd.DataFrame(liste_actions).to_csv(FICHIER_DATA, index=False)
+    else:
+        # Si la liste est vide (après une suppression), on supprime le fichier
+        if os.path.exists(FICHIER_DATA):
+            os.remove(FICHIER_DATA)
 
 # --- 3. RECHERCHE INTELLIGENTE DE TICKER ---
 with st.sidebar:
@@ -116,4 +120,5 @@ if st.session_state.mon_portefeuille:
     st.metric("Valeur Totale du Portefeuille", f"{total_v:.2f} €")
 else:
     st.info("Recherchez une action dans le menu à gauche pour commencer.")
+
 
