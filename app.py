@@ -38,9 +38,40 @@ def sauvegarder_donnees(liste_actions):
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_donnees()
 
+# --- 3. BARRE DE TITRE ET SAUVEGARDE EXTERNE ---
 st.title("📈 Suivi de Portefeuille")
 
-# --- 3. RECHERCHE ET AJOUT (SIDEBAR) ---
+# Zone de sauvegarde en haut à droite
+col_t1, col_t2 = st.columns([3, 1])
+with col_t2:
+    st.write("💾 **Maintenance**")
+    # BOUTON SAUVEGARDE (EXPORT)
+    if st.session_state.mon_portefeuille:
+        df_export = pd.DataFrame(st.session_state.mon_portefeuille)
+        csv = df_export.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Exporter (Backup)",
+            data=csv,
+            file_name='mon_portefeuille_sauvegarde.csv',
+            mime='text/csv',
+            help="Télécharge vos données sur votre PC"
+        )
+    
+    # BOUTON IMPORT (RESTORE)
+    uploaded_file = st.file_uploader("Importer un Backup", type="csv", label_visibility="collapsed")
+    if uploaded_file is not None:
+        try:
+            df_import = pd.read_csv(uploaded_file)
+            st.session_state.mon_portefeuille = df_import.to_dict('records')
+            sauvegarder_donnees(st.session_state.mon_portefeuille)
+            st.success("Portefeuille restauré !")
+            st.rerun()
+        except:
+            st.error("Fichier invalide.")
+
+st.divider()
+
+# --- 4. RECHERCHE ET AJOUT (SIDEBAR) ---
 with st.sidebar:
     st.header("🔍 Rechercher un titre")
     query = st.text_input("Saisissez Nom ou ISIN", placeholder="Ex: LVMH ou FR0000121014")
@@ -72,7 +103,7 @@ with st.sidebar:
                 sauvegarder_donnees(st.session_state.mon_portefeuille)
                 st.rerun()
 
-# --- 4. CALCULS GLOBAUX ---
+# --- 5. CALCULS ET AFFICHAGE ---
 if st.session_state.mon_portefeuille:
     donnees_affichees = []
     total_actuel = 0
@@ -84,15 +115,13 @@ if st.session_state.mon_portefeuille:
             prix = t.fast_info['lastPrice']
             valeur_actuelle = prix * act['Qté']
             valeur_achat = act['PRU'] * act['Qté']
-            
             total_actuel += valeur_actuelle
             total_achat_initial += valeur_achat
-            
             donnees_affichees.append({"act": act, "prix": prix, "valeur": valeur_actuelle})
         except:
             donnees_affichees.append({"act": act, "prix": 0, "valeur": 0})
 
-    # --- AFFICHAGE DU RÉSUMÉ (KPI) ---
+    # KPI Résumé
     pv_globale_euros = total_actuel - total_achat_initial
     pv_globale_pct = (pv_globale_euros / total_achat_initial * 100) if total_achat_initial > 0 else 0
 
@@ -100,62 +129,40 @@ if st.session_state.mon_portefeuille:
     with col_m1:
         st.metric("VALEUR TOTALE", f"{total_actuel:.2f} €")
     with col_m2:
-        # Le paramètre 'delta' gère automatiquement le vert/rouge
-        st.metric(
-            "PLUS/MOINS-VALUE TOTALE", 
-            f"{pv_globale_euros:.2f} €", 
-            delta=f"{pv_globale_pct:+.2f} %"
-        )
+        st.metric("PLUS/MOINS-VALUE TOTALE", f"{pv_globale_euros:.2f} €", delta=f"{pv_globale_pct:+.2f} %")
     
     st.divider()
 
-    # --- 5. AFFICHAGE DES CARTES INDIVIDUELLES ---
+    # Cartes individuelles
     for i, item in enumerate(donnees_affichees):
-        act = item['act']
-        prix = item['prix']
-        valeur = item['valeur']
-        
+        act, prix, valeur = item['act'], item['prix'], item['valeur']
         if prix > 0:
             perf_pct = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
             plus_value_euros = (prix - act['PRU']) * act['Qté']
             seuil_bas = act['PRU'] * 0.80
-            part_pourtentage = (valeur / total_actuel) * 100 if total_actuel > 0 else 0
+            part_p = (valeur / total_actuel) * 100 if total_actuel > 0 else 0
             
             signe = "+" if plus_value_euros >= 0 else ""
-            header_text = f"**{act['Nom']}** | {prix:.2f}€ | {perf_pct:+.2f}% | {signe}{plus_value_euros:.2f}€"
+            header = f"**{act['Nom']}** | {prix:.2f}€ | {perf_pct:+.2f}% | {signe}{plus_value_euros:.2f}€"
             
-            with st.expander(header_text):
-                if plus_value_euros >= 0:
-                    st.success(f"Gain latent : {plus_value_euros:.2f} €")
-                else:
-                    st.error(f"Perte latente : {abs(plus_value_euros):.2f} €")
+            with st.expander(header):
+                if plus_value_euros >= 0: st.success(f"Gain latent : {plus_value_euros:.2f} €")
+                else: st.error(f"Perte latente : {abs(plus_value_euros):.2f} €")
 
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    st.write("**Ma Position**")
-                    st.write(f"Quantité : {act['Qté']}")
-                    st.write(f"Valeur : {valeur:.2f}€")
+                    st.write(f"**Quantité :** {act['Qté']}")
+                    st.write(f"**Valeur :** {valeur:.2f}€")
                 with c2:
-                    st.write("**Performances**")
-                    st.write(f"PRU : {act['PRU']:.2f}€")
-                    st.write(f"Part : **{part_pourtentage:.2f}%**")
+                    st.write(f"**PRU :** {act['PRU']:.2f}€")
+                    st.write(f"**Part :** {part_p:.2f}%")
                 with c3:
-                    st.write("**Seuils d'Alerte**")
-                    st.write(f"Bas (-20%) : {seuil_bas:.2f}€")
-                    st.write(f"Haut (Vente) : {act['Seuil_Haut']:.2f}€")
+                    st.write(f"**Bas :** {seuil_bas:.2f}€")
+                    st.write(f"**Haut :** {act['Seuil_Haut']:.2f}€")
                 with c4:
-                    st.write("**Action**")
                     if st.button("🗑️ Supprimer", key=f"del_{i}"):
                         st.session_state.mon_portefeuille.pop(i)
                         sauvegarder_donnees(st.session_state.mon_portefeuille)
                         st.rerun()
-
-                # Alertes Pushover
-                if prix <= seuil_bas:
-                    envoyer_alerte(f"🚨 ALERTE : {act['Nom']} chute ({prix:.2f}€)")
-                if act['Seuil_Haut'] > 0 and prix >= act['Seuil_Haut']:
-                    envoyer_alerte(f"🎯 OBJECTIF : {act['Nom']} atteint ({prix:.2f}€)")
-        else:
-            st.error(f"Données indisponibles pour {act['Ticker']}")
 else:
     st.info("Utilisez la barre latérale pour ajouter vos titres.")
