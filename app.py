@@ -1,62 +1,74 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import requests
+import os
 
-# --- CONFIGURATION PUSHOVER ---
-PUSHOVER_USER_KEY = "VOTRE_USER_KEY"
-PUSHOVER_API_TOKEN = "VOTRE_API_TOKEN"
+st.set_page_config(page_title="Mon Portefeuille", layout="wide")
 
-def envoyer_alerte(message):
-    if PUSHOVER_USER_KEY != "VOTRE_USER_KEY": # Évite d'envoyer si non configuré
-        payload = {"token": PUSHOVER_API_TOKEN, "user": PUSHOVER_USER_KEY, "message": message}
-        requests.post("https://api.pushover.net/1/messages.json", data=payload)
+# --- FONCTION POUR SAUVEGARDER LES DONNÉES ---
+# On crée un petit fichier sur le serveur pour ne pas perdre vos actions
+FICHIER_DATA = "portefeuille_data.csv"
 
-st.set_page_config(page_title="Mon Portefeuille Pro", layout="wide")
-st.title("📈 Mon Portefeuille (Marché Fermé Inclus)")
+def charger_donnees():
+    if os.path.exists(FICHIER_DATA):
+        return pd.read_csv(FICHIER_DATA).to_dict('records')
+    return []
 
-# --- DONNÉES ---
-data_portefeuille = [
-    {"Nom": "LVMH", "Ticker": "MC.PA", "PRU": 700.0, "Qté": 5, "Seuil_Haut": 900.0},
-    {"Nom": "Apple", "Ticker": "AAPL", "PRU": 150.0, "Qté": 10, "Seuil_Haut": 220.0}
-]
+def sauvegarder_donnees(liste_actions):
+    pd.DataFrame(liste_actions).to_csv(FICHIER_DATA, index=False)
 
-lignes_finales = []
+# Initialisation
+if 'mon_portefeuille' not in st.session_state:
+    st.session_state.mon_portefeuille = charger_donnees()
 
-for action in data_portefeuille:
-    ticker_name = action['Ticker']
-    # On récupère les données historiques des 5 derniers jours pour être sûr d'avoir un prix
-    info_action = yf.Ticker(ticker_name)
-    historique = info_action.history(period="5d")
-    
-    if not historique.empty:
-        # On prend le prix le plus récent disponible
-        prix_actuel = historique['Close'].iloc[-1]
-        prix_veille = historique['Close'].iloc[-2] if len(historique) > 1 else prix_actuel
+st.title("📈 Mon Portefeuille Boursier")
+
+# --- FORMULAIRE DE SAISIE (BARRE LATÉRALE) ---
+with st.sidebar:
+    st.header("➕ Ajouter une Action")
+    with st.form("ajout"):
+        nom = st.text_input("Nom de l'action", "Total")
+        ticker = st.text_input("Ticker (ex: TTE.PA, AAPL)", "TTE.PA")
+        pru = st.number_input("Prix de revient (PRU)", value=50.0)
+        qte = st.number_input("Quantité", value=10)
+        seuil_haut = st.number_input("Seuil haut (Vente)", value=70.0)
         
-        # Calculs
-        variation_journaliere = ((prix_actuel / prix_veille) - 1) * 100
-        valorisation = prix_actuel * action['Qté']
-        seuil_bas = action['PRU'] * 0.80
-        performance_totale = ((prix_actuel / action['PRU']) - 1) * 100
-        
-        # Logique d'alerte (seulement si variation brutale)
-        if variation_journaliere <= -5:
-            envoyer_alerte(f"⚠️ CHUTE : {action['Nom']} ({variation_journaliere:.2f}%)")
+        if st.form_submit_button("Enregistrer"):
+            nouvelle = {"Nom": nom, "Ticker": ticker.upper(), "PRU": pru, "Qté": qte, "Seuil_Haut": seuil_haut}
+            st.session_state.mon_portefeuille.append(nouvelle)
+            sauvegarder_donnees(st.session_state.mon_portefeuille)
+            st.rerun()
 
-        lignes_finales.append({
-            "Nom": action['Nom'],
-            "Prix Actuel": f"{prix_actuel:.2f} €",
-            "Var. Jour": f"{variation_journaliere:.2f}%",
-            "Valorisation": f"{valorisation:.2f} €",
-            "Perf. Totale": f"{performance_totale:.2f}%",
-            "Seuil Bas (-20%)": f"{seuil_bas:.2f} €",
-            "Seuil Haut": f"{action['Seuil_Haut']:.2f} €"
-        })
-    else:
-        st.error(f"Impossible de récupérer les données pour {ticker_name}")
+# --- AFFICHAGE DU TABLEAU ---
+if st.session_state.mon_portefeuille:
+    lignes = []
+    for act in st.session_state.mon_portefeuille:
+        # Récupération du prix (5 derniers jours pour éviter les erreurs de week-end)
+        df_tick = yf.Ticker(act['Ticker']).history(period="5d")
+        if not df_tick.empty:
+            prix = df_tick['Close'].iloc[-1]
+            val_totale = prix * act['Qté']
+            perf = ((prix / act['PRU']) - 1) * 100
+            s_bas = act['PRU'] * 0.80 # Seuil bas auto à -20%
+            
+            lignes.append({
+                "Action": act['Nom'],
+                "Ticker": act['Ticker'],
+                "Prix": f"{prix:.2f}€",
+                "PRU": f"{act['PRU']:.2f}€",
+                "Qté": act['Qté'],
+                "Valorisation": f"{val_totale:.2f}€",
+                "Perf %": f"{perf:.2f}%",
+                "Seuil Bas (-20%)": f"{s_bas:.2f}€",
+                "Seuil Haut": f"{act['Seuil_Haut']:.2f}€"
+            })
 
-# Affichage
-if lignes_finales:
-    df_final = pd.DataFrame(lignes_finales)
-    st.table(df_final)
+    st.subheader("Mes Positions Actuelles")
+    st.table(pd.DataFrame(lignes))
+
+    if st.button("🗑️ Tout effacer"):
+        st.session_state.mon_portefeuille = []
+        if os.path.exists(FICHIER_DATA): os.remove(FICHIER_DATA)
+        st.rerun()
+else:
+    st.info("Votre portefeuille est vide. Ajoutez une action via le menu à gauche.")
