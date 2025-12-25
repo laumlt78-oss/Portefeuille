@@ -3,6 +3,18 @@ import yfinance as yf
 import pandas as pd
 import os
 
+# --- CONFIGURATION PUSHOVER ---
+# Remplacez par vos vrais codes entre les guillemets
+USER_KEY = "VOTRE_USER_KEY"
+API_TOKEN = "VOTRE_API_TOKEN"
+
+def envoyer_alerte(message):
+    if USER_KEY != "VOTRE_USER_KEY":
+        requests.post("https://api.pushover.net/1/messages.json", data={
+            "token": API_TOKEN,
+            "user": USER_KEY,
+            "message": message
+        })
 st.set_page_config(page_title="Mon Portefeuille", layout="wide")
 
 # --- FONCTION POUR SAUVEGARDER LES DONNÉES ---
@@ -65,10 +77,15 @@ if st.session_state.mon_portefeuille:
 
     st.subheader("Mes Positions Actuelles")
     st.table(pd.DataFrame(lignes))
-
+# LOGIQUE D'ALERTE AUTOMATIQUE
+            if prix <= s_bas:
+                envoyer_alerte(f"🚨 ALERTE : {act['Nom']} a touché son seuil bas à {prix:.2f}€")
+            elif prix >= act['Seuil_Haut']:
+                envoyer_alerte(f"💰 ALERTE : {act['Nom']} a atteint l'objectif de {act['Seuil_Haut']:.2f}€")
     if st.button("🗑️ Tout effacer"):
         st.session_state.mon_portefeuille = []
         if os.path.exists(FICHIER_DATA): os.remove(FICHIER_DATA)
         st.rerun()
 else:
     st.info("Votre portefeuille est vide. Ajoutez une action via le menu à gauche.")
+
