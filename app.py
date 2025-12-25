@@ -5,11 +5,11 @@ import os
 import requests
 
 # --- 1. CONFIGURATION PUSHOVER ---
-USER_KEY = "VOTRE_USER_KEY_ICI"
-API_TOKEN = "VOTRE_API_TOKEN_ICI"
+USER_KEY = "uy24daw7gs19ivfhwh7wgsy8amajc8"
+API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
 
 def envoyer_alerte(message):
-    if USER_KEY != "VOTRE_USER_KEY_ICI":
+    if USER_KEY != "uy24daw7gs19ivfhwh7wgsy8amajc8":
         requests.post("https://api.pushover.net/1/messages.json", data={"token": API_TOKEN, "user": USER_KEY, "message": message})
 
 st.set_page_config(page_title="Mon Portefeuille Pro", layout="wide")
@@ -116,3 +116,4 @@ if st.session_state.mon_portefeuille:
     st.metric("Valeur Totale du Portefeuille", f"{total_v:.2f} €")
 else:
     st.info("Recherchez une action dans le menu à gauche pour commencer.")
+
