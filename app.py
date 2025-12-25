@@ -77,7 +77,6 @@ if st.session_state.mon_portefeuille:
     donnees_affichees = []
     total_portefeuille = 0
 
-    # On récupère d'abord tous les prix pour calculer le total
     for act in st.session_state.mon_portefeuille:
         try:
             t = yf.Ticker(act['Ticker'])
@@ -88,42 +87,49 @@ if st.session_state.mon_portefeuille:
         except:
             donnees_affichees.append({"act": act, "prix": 0, "valeur": 0})
 
-    # --- 5. AFFICHAGE DES CARTES ---
     st.metric("VALEUR TOTALE DU PORTEFEUILLE", f"{total_portefeuille:.2f} €")
     st.divider()
 
+    # --- 5. AFFICHAGE DES CARTES ---
     for i, item in enumerate(donnees_affichees):
         act = item['act']
         prix = item['prix']
         valeur = item['valeur']
         
         if prix > 0:
-            perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
+            perf_pct = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
+            plus_value_euros = (prix - act['PRU']) * act['Qté']
             seuil_bas = act['PRU'] * 0.80
             part_pourtentage = (valeur / total_portefeuille) * 100 if total_portefeuille > 0 else 0
             
-            # Affichage de l'entête de la carte
-            couleur_perf = "green" if perf >= 0 else "red"
-            with st.expander(f"**{act['Nom']}** : {prix:.2f}€ ({perf:+.2f}%)"):
-                
-                # Organisation en 4 colonnes pour plus de clarté
+            # Formatage du bandeau avec couleur pour la Plus/Moins Value
+            signe = "+" if plus_value_euros >= 0 else ""
+            label_pv = f"{signe}{plus_value_euros:.2f}€"
+            
+            # Utilisation de Markdown pour simuler de la couleur dans le titre de l'expander
+            header_text = f"**{act['Nom']}** | {prix:.2f}€ | {perf_pct:+.2f}% | {label_pv}"
+            
+            # Création de la carte
+            with st.expander(header_text):
+                # Un petit indicateur de couleur visuel à l'intérieur
+                if plus_value_euros >= 0:
+                    st.success(f"Hausse de {plus_value_euros:.2f} €")
+                else:
+                    st.error(f"Baisse de {abs(plus_value_euros):.2f} €")
+
                 c1, c2, c3, c4 = st.columns(4)
-                
                 with c1:
                     st.write("**Ma Position**")
                     st.write(f"Quantité : {act['Qté']}")
                     st.write(f"Valeur : {valeur:.2f}€")
-                
                 with c2:
                     st.write("**Performances**")
                     st.write(f"PRU : {act['PRU']:.2f}€")
                     st.write(f"Part : **{part_pourtentage:.2f}%**")
-                
                 with c3:
                     st.write("**Seuils d'Alerte**")
                     st.write(f"Bas (-20%) : {seuil_bas:.2f}€")
                     st.write(f"Haut (Vente) : {act['Seuil_Haut']:.2f}€")
-                
                 with c4:
                     st.write("**Action**")
                     if st.button("🗑️ Supprimer", key=f"del_{i}"):
@@ -131,15 +137,16 @@ if st.session_state.mon_portefeuille:
                         sauvegarder_donnees(st.session_state.mon_portefeuille)
                         st.rerun()
 
-                # Alertes visuelles rapides
+                # Logique Pushover
                 if prix <= seuil_bas:
-                    st.warning(f"⚠️ Seuil bas atteint ({seuil_bas:.2f}€)")
-                    envoyer_alerte(f"Alerte Basse : {act['Nom']}")
+                    envoyer_alerte(f"🚨 ALERTE BASSE : {act['Nom']} ({prix:.2f}€)")
                 if act['Seuil_Haut'] > 0 and prix >= act['Seuil_Haut']:
-                    st.success(f"🎯 Objectif haut atteint ({act['Seuil_Haut']:.2f}€)")
-                    envoyer_alerte(f"Alerte Haute : {act['Nom']}")
+                    envoyer_alerte(f"💰 OBJECTIF ATTEINT : {act['Nom']} ({prix:.2f}€)")
         else:
-            st.error(f"Erreur sur le Ticker {act['Ticker']}. Vérifiez l'orthographe.")
-
+            st.error(f"Erreur sur le Ticker {act['Ticker']}.")
 else:
     st.info("Utilisez la barre latérale pour ajouter vos titres.")
+
+
+
+
