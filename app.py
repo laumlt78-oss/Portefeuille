@@ -5,124 +5,172 @@ import os
 import requests
 
 # --- 1. CONFIGURATION PUSHOVER ---
-USER_KEY = "uy24daw7gs19ivfhwh7wgsy8amajc8"
-API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
+# Remplacez par vos vrais codes entre les guillemets
+USER_KEY = "VOTRE_USER_KEY_ICI"
+API_TOKEN = "VOTRE_API_TOKEN_ICI"
 
 def envoyer_alerte(message):
-    if USER_KEY != "uy24daw7gs19ivfhwh7wgsy8amajc8":
-        requests.post("https://api.pushover.net/1/messages.json", data={"token": API_TOKEN, "user": USER_KEY, "message": message})
+    if USER_KEY != "VOTRE_USER_KEY_ICI":
+        try:
+            requests.post("https://api.pushover.net/1/messages.json", data={
+                "token": API_TOKEN,
+                "user": USER_KEY,
+                "message": message
+            }, timeout=5)
+        except:
+            pass
 
 st.set_page_config(page_title="Mon Portefeuille Pro", layout="wide")
 
-# --- 2. GESTION DES DONNÉES ---
+# --- 2. GESTION DES DONNÉES (VERSION ANTI-ERREUR) ---
 FICHIER_DATA = "portefeuille_data.csv"
 
 def charger_donnees():
-    # On vérifie si le fichier existe ET s'il n'est pas vide (plus de 0 octet)
-    if os.path.exists(FICHIER_DATA) and os.path.getsize(FICHIER_DATA) > 0:
-        try:
-            df = pd.read_csv(FICHIER_DATA)
-            # On vérifie aussi que le dataframe n'est pas vide après lecture
-            if not df.empty:
-                return df.to_dict('records')
-        except Exception:
+    if not os.path.exists(FICHIER_DATA):
+        return []
+    try:
+        # Si le fichier est vide (0 octet), on le supprime et on renvoie vide
+        if os.path.getsize(FICHIER_DATA) == 0:
+            os.remove(FICHIER_DATA)
             return []
-    return []
+        df = pd.read_csv(FICHIER_DATA)
+        return df.to_dict('records')
+    except Exception:
+        return []
 
 def sauvegarder_donnees(liste_actions):
-    if liste_actions:
-        df = pd.DataFrame(liste_actions)
-        df.to_csv(FICHIER_DATA, index=False)
-    else:
-        # Si on vide tout, on supprime le fichier pour éviter les erreurs au prochain démarrage
+    if not liste_actions:
         if os.path.exists(FICHIER_DATA):
             os.remove(FICHIER_DATA)
+    else:
+        df = pd.DataFrame(liste_actions)
+        df.to_csv(FICHIER_DATA, index=False)
 
-# --- 3. RECHERCHE INTELLIGENTE DE TICKER ---
+# Initialisation de la session
+if 'mon_portefeuille' not in st.session_state:
+    st.session_state.mon_portefeuille = charger_donnees()
+
+st.title("🚀 Mon Assistant Boursier Personnel")
+
+# --- 3. RECHERCHE ET AJOUT (SIDEBAR) ---
 with st.sidebar:
-    st.header("🔍 Rechercher une Action")
-    recherche = st.text_input("Tapez le nom (ex: LVMH, Total, Apple)")
-    ticker_choisi = ""
-    nom_choisi = ""
+    st.header("🔍 Trouver une Action")
+    recherche = st.text_input("Nom de l'entreprise (ex: LVMH, Apple)")
+    
+    ticker_suggere = ""
+    nom_suggere = ""
     
     if recherche:
-        # On cherche les correspondances sur Yahoo Finance
-        suggestions = yf.utils.get_tickers_by_name(recherche)
-        if not suggestions.empty:
-            # On prépare une liste de choix lisible
-            choix = suggestions.apply(lambda x: f"{x['shortname']} ({x['symbol']} - {x['exchange']})", axis=1).tolist()
-            selection = st.selectbox("Choisissez l'action précise :", choix)
-            # On extrait le ticker du choix sélectionné
-            ticker_choisi = selection.split('(')[1].split(' -')[0]
-            nom_choisi = selection.split(' (')[0]
-            st.success(f"Ticker sélectionné : {ticker_choisi}")
+        try:
+            # Recherche de tickers par nom
+            suggestions = yf.utils.get_tickers_by_name(recherche)
+            if not suggestions.empty:
+                liste_choix = suggestions.apply(lambda x: f"{x['shortname']} ({x['symbol']} - {x['exchange']})", axis=1).tolist()
+                selection = st.selectbox("Résultats trouvés :", liste_choix)
+                ticker_suggere = selection.split('(')[1].split(' -')[0]
+                nom_suggere = selection.split(' (')[0]
+        except:
+            st.error("Service de recherche indisponible.")
 
     st.divider()
-    
-    # --- 4. FORMULAIRE D'AJOUT ---
-    st.header("📝 Détails de la position")
-    with st.form("ajout"):
-        f_nom = st.text_input("Nom de l'action", value=nom_choisi)
-        f_ticker = st.text_input("Ticker", value=ticker_choisi)
-        f_isin = st.text_input("Code ISIN (Optionnel)")
-        f_pru = st.number_input("Prix d'achat (PRU)", value=0.0)
-        f_qte = st.number_input("Quantité possédée", value=1)
-        f_haut = st.number_input("Objectif de vente (Seuil Haut)", value=0.0)
+    st.header("📝 Détails de l'achat")
+    with st.form("form_ajout", clear_on_submit=True):
+        f_nom = st.text_input("Nom", value=nom_suggere)
+        f_ticker = st.text_input("Ticker", value=ticker_suggere)
+        f_pru = st.number_input("Prix d'achat (PRU)", min_value=0.0, step=0.1)
+        f_qte = st.number_input("Quantité", min_value=1, step=1)
+        f_haut = st.number_input("Objectif de vente (Haut)", min_value=0.0, step=0.1)
         
-        if st.form_submit_button("Ajouter au portefeuille"):
+        if st.form_submit_button("Ajouter au Portefeuille"):
             if f_ticker:
-                nouvelle = {"Nom": f_nom, "Ticker": f_ticker.upper(), "ISIN": f_isin, "PRU": f_pru, "Qté": f_qte, "Seuil_Haut": f_haut}
-                st.session_state.mon_portefeuille.append(nouvelle)
+                nouvelle_action = {
+                    "Nom": f_nom,
+                    "Ticker": f_ticker.upper(),
+                    "PRU": f_pru,
+                    "Qté": f_qte,
+                    "Seuil_Haut": f_haut
+                }
+                st.session_state.mon_portefeuille.append(nouvelle_action)
                 sauvegarder_donnees(st.session_state.mon_portefeuille)
+                st.success(f"{f_nom} ajouté !")
                 st.rerun()
             else:
-                st.error("Veuillez sélectionner un ticker.")
+                st.warning("Veuillez sélectionner un Ticker.")
 
-# --- 5. AFFICHAGE ET MODIFICATION ---
+# --- 4. AFFICHAGE DU PORTEFEUILLE ---
 if st.session_state.mon_portefeuille:
-    total_v = 0
-    lignes_affichage = []
+    total_portefeuille = 0
+    lignes_data = []
+
+    st.subheader("📊 Mes Positions Actuelles")
     
-    st.subheader("📊 Mes Positions")
-    
-    # On parcourt avec l'index pour pouvoir supprimer/modifier précisément
     for i, act in enumerate(st.session_state.mon_portefeuille):
-        # Récupération cours
-        tick_info = yf.Ticker(act['Ticker'])
-        hist = tick_info.history(period="5d")
-        
-        if not hist.empty:
-            prix = hist['Close'].iloc[-1]
-            val = prix * act['Qté']
-            total_v += val
-            perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
-            s_bas = act['PRU'] * 0.80
+        try:
+            # Récupération des données financières
+            ticket_yf = yf.Ticker(act['Ticker'])
+            hist = ticket_yf.history(period="5d")
             
-            # Affichage en colonnes pour chaque ligne (mieux pour mobile)
-            col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 1])
-            with col1:
-                st.write(f"**{act['Nom']}**")
-                st.caption(f"{act['Ticker']} | {act['ISIN']}")
-            with col2:
-                st.write(f"Prix: {prix:.2f}€")
-                st.write(f"PRU: {act['PRU']:.2f}€")
-            with col3:
-                st.write(f"Val: {val:.2f}€")
-                st.write(f"Perf: {perf:.2f}%")
-            with col4:
-                st.caption(f"Bas: {s_bas:.2f}€")
-                st.caption(f"Haut: {act['Seuil_Haut']:.2f}€")
-            with col5:
-                # Bouton de suppression unique pour cette ligne
-                if st.button("🗑️", key=f"del_{i}"):
-                    st.session_state.mon_portefeuille.pop(i)
+            if not hist.empty:
+                prix_actuel = hist['Close'].iloc[-1]
+                prix_veille = hist['Close'].iloc[-2] if len(hist) > 1 else prix_actuel
+                
+                # Calculs
+                valeur_ligne = prix_actuel * act['Qté']
+                total_portefeuille += valeur_ligne
+                perf_globale = ((prix_actuel / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
+                seuil_bas_auto = act['PRU'] * 0.80 # Alerte à -20%
+                var_jour = ((prix_actuel / prix_veille) - 1) * 100
+
+                # Envoi d'alertes Pushover
+                if prix_actuel <= seuil_bas_auto:
+                    envoyer_alerte(f"🚨 SEUIL BAS : {act['Nom']} est à {prix_actuel:.2f}€")
+                if act['Seuil_Haut'] > 0 and prix_actuel >= act['Seuil_Haut']:
+                    envoyer_alerte(f"💰 SEUIL HAUT : {act['Nom']} est à {prix_actuel:.2f}€")
+
+                # Préparation du tableau
+                lignes_data.append({
+                    "ID": i,
+                    "Action": act['Nom'],
+                    "Ticker": act['Ticker'],
+                    "Prix": f"{prix_actuel:.2f}€",
+                    "Var. Jour": f"{var_jour:+.2f}%",
+                    "PRU": f"{act['PRU']:.2f}€",
+                    "Qté": act['Qté'],
+                    "Valeur": valeur_ligne,
+                    "Perf %": f"{perf_globale:+.2f}%",
+                    "Seuil Bas": f"{seuil_bas_auto:.2f}€",
+                    "Seuil Haut": f"{act['Seuil_Haut']:.2f}€"
+                })
+        except:
+            st.error(f"Erreur de données pour {act['Ticker']}")
+
+    if lignes_data:
+        df_visu = pd.DataFrame(lignes_data)
+        
+        # Affichage du résumé
+        st.metric("Valeur Totale", f"{total_portefeuille:.2f} €")
+        
+        # Affichage avec possibilité de supprimer
+        for idx, row in df_visu.iterrows():
+            with st.expander(f"📌 {row['Action']} ({row['Ticker']}) : {row['Prix']} | {row['Perf %']}"):
+                c1, c2, c3 = st.columns(3)
+                c1.write(f"**Quantité:** {row['Qté']}")
+                c1.write(f"**Valeur Totale:** {row['Valeur']:.2f}€")
+                c2.write(f"**Seuil Bas (-20%):** {row['Seuil Bas']}")
+                c2.write(f"**Seuil Haut:** {row['Seuil Haut']}")
+                if c3.button("🗑️ Supprimer cette ligne", key=f"btn_{row['ID']}"):
+                    st.session_state.mon_portefeuille.pop(int(row['ID']))
                     sauvegarder_donnees(st.session_state.mon_portefeuille)
                     st.rerun()
-            st.divider()
 
-    st.metric("Valeur Totale du Portefeuille", f"{total_v:.2f} €")
+    # --- 5. ACTUALITÉS ---
+    st.divider()
+    st.header("📰 News Marché")
+    for act in st.session_state.mon_portefeuille[:2]:
+        news = yf.Ticker(act['Ticker']).news
+        if news:
+            st.write(f"**{act['Nom']}** : {news[0].get('title')}")
+            st.caption(f"[Lire l'article]({news[0].get('link')})")
+
 else:
-    st.info("Recherchez une action dans le menu à gauche pour commencer.")
-
-
-
+    st.info("👋 Bienvenue ! Utilisez la barre à gauche pour ajouter votre première action.")
