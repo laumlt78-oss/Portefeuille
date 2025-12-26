@@ -15,7 +15,7 @@ API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
 
 
 def envoyer_alerte(message):
-    if USER_KEY != "VOTRE_USER_KEY_ICI":
+    if USER_KEY != "uy24daw7gs19ivfhwh7wgsy8amajc8":
         try:
             requests.post("https://api.pushover.net/1/messages.json", data={
                 "token": API_TOKEN, "user": USER_KEY, "message": message
@@ -157,19 +157,30 @@ with st.sidebar:
                 sauvegarder_donnees(st.session_state.mon_portefeuille); st.rerun()
     
     st.divider()
-    st.header("💾 Maintenance")
-    # BACKUP
-    df_b = pd.DataFrame(st.session_state.mon_portefeuille)
-    st.download_button("📥 Télécharger CSV", df_b.to_csv(index=False).encode('utf-8'), "portefeuille.csv", use_container_width=True)
     
-    # RESTORE (LE BOUTON REVENU ICI)
-    up = st.file_uploader("📤 Restaurer CSV", type="csv")
-    if up:
-        new_df = pd.read_csv(up)
-        st.session_state.mon_portefeuille = new_df.to_dict('records')
-        sauvegarder_donnees(st.session_state.mon_portefeuille)
-        st.success("Données restaurées !")
-        st.rerun()
+    # RESTAURATION PLACÉE ICI POUR VISIBILITÉ
+    st.subheader("📤 Restaurer Portefeuille")
+    up = st.file_uploader("Choisir un fichier CSV", type="csv")
+    if up is not None:
+        try:
+            restored_df = pd.read_csv(up)
+            st.session_state.mon_portefeuille = restored_df.to_dict('records')
+            sauvegarder_donnees(st.session_state.mon_portefeuille)
+            st.success("Données chargées !")
+            # Un petit bouton pour forcer le rafraîchissement après l'upload
+            if st.button("Rafraîchir l'affichage"):
+                st.rerun()
+        except:
+            st.error("Fichier invalide.")
+
+    st.divider()
+    
+    # BACKUP
+    st.subheader("📥 Sauvegarder")
+    df_b = pd.DataFrame(st.session_state.mon_portefeuille)
+    st.download_button("Télécharger CSV", df_b.to_csv(index=False).encode('utf-8'), "portefeuille.csv", use_container_width=True)
+
+
 
 
 
