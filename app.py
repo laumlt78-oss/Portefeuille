@@ -15,7 +15,7 @@ API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
 
 
 def envoyer_alerte(message):
-    if USER_KEY != "Vuy24daw7gs19ivfhwh7wgsy8amajc8":
+    if USER_KEY != "VOTRE_USER_KEY_ICI":
         try:
             requests.post("https://api.pushover.net/1/messages.json", data={
                 "token": API_TOKEN, "user": USER_KEY, "message": message
@@ -32,6 +32,7 @@ def charger_donnees():
         return []
     try:
         df = pd.read_csv(FICHIER_DATA)
+        df = df.fillna("")
         for col in ['Date_Achat', 'Seuil_Haut', 'ISIN']:
             if col not in df.columns:
                 df[col] = "" if col == 'ISIN' else (0.0 if col == 'Seuil_Haut' else str(date.today()))
@@ -60,7 +61,7 @@ tab_p, tab_g = st.tabs(["📊 Portefeuille", "📈 Graphes"])
 
 # --- 5. CALCULS ---
 if st.session_state.mon_portefeuille:
-    total_actuel, total_achat, var_jour = 0, 0, 0
+    total_actuel, total_achat, var_jour = 0.0, 0.0, 0.0
     donnees_pos = []
 
     for i, act in enumerate(st.session_state.mon_portefeuille):
@@ -74,11 +75,9 @@ if st.session_state.mon_portefeuille:
                 total_actuel += v_act
                 total_achat += (float(act['PRU']) * int(act['Qté']))
                 var_jour += (p_act - p_prev) * int(act['Qté'])
-                
                 donnees_pos.append({"idx": i, "act": act, "prix": p_act, "var": (p_act - p_prev) * int(act['Qté']), "val": v_act})
         except: pass
 
-    # --- ONGLET PORTEFEUILLE ---
     with tab_p:
         pv_g = total_actuel - total_achat
         c1, c2, c3 = st.columns(3)
@@ -90,16 +89,13 @@ if st.session_state.mon_portefeuille:
         for item in donnees_pos:
             idx, a, p = item['idx'], item['act'], item['prix']
             pv_l = (p - float(a['PRU'])) * int(a['Qté'])
-            
-            # --- CORRECTION TITRE BANDEAU ---
             val_isin = str(a.get('ISIN', '')).strip()
-            # On construit le titre : Pastille | Nom | Prix | Gain | (ISIN)
-            # Le ISIN est placé à la fin pour être visible
+            if val_isin.lower() in ["nan", "none"]: val_isin = ""
+            
             header = f"{'🟢' if pv_l >= 0 else '🔴'} {a['Nom']} | {p:.2f}€ | {pv_l:+.2f}€ | {val_isin}"
             
             with st.expander(header):
                 edit_mode = st.toggle("📝 Modifier", key=f"edit_mode_{idx}")
-                
                 if edit_mode:
                     with st.form(f"form_edit_{idx}"):
                         col_e1, col_e2 = st.columns(2)
@@ -109,24 +105,19 @@ if st.session_state.mon_portefeuille:
                         new_qte = col_e2.number_input("Quantité", value=int(a['Qté']), min_value=1)
                         new_obj = col_e1.number_input("Objectif", value=float(a.get('Seuil_Haut', 0.0)))
                         new_date = col_e2.date_input("Date achat", value=pd.to_datetime(a.get('Date_Achat', date.today())))
-                        
-                        if st.form_submit_button("Valider les modifications"):
+                        if st.form_submit_button("Enregistrer"):
                             st.session_state.mon_portefeuille[idx].update({
                                 "Nom": new_nom, "ISIN": new_isin, "PRU": new_pru, 
                                 "Qté": new_qte, "Seuil_Haut": new_obj, "Date_Achat": str(new_date)
                             })
-                            sauvegarder_donnees(st.session_state.mon_portefeuille)
-                            st.rerun()
+                            sauvegarder_donnees(st.session_state.mon_portefeuille); st.rerun()
                 else:
-                    st.write(f"**Code ISIN :** {val_isin if val_isin else 'Non renseigné'}")
-                    st.write(f"**Date Achat :** {a.get('Date_Achat', 'N/A')} | **Objectif :** {a.get('Seuil_Haut', 0)}€")
+                    st.write(f"**Code ISIN :** {val_isin if val_isin else 'N/C'} | **Achat :** {a.get('Date_Achat', 'N/C')}")
                     st.write(f"**Valeur :** {item['val']:.2f}€ | **Var. Jour :** {item['var']:+.2f}€")
                     if st.button("🗑️ Supprimer", key=f"del_btn_{idx}"):
                         st.session_state.mon_portefeuille.pop(idx)
-                        sauvegarder_donnees(st.session_state.mon_portefeuille)
-                        st.rerun()
+                        sauvegarder_donnees(st.session_state.mon_portefeuille); st.rerun()
 
-    # --- ONGLET GRAPHES ---
     with tab_g:
         noms = [x['Nom'] for x in st.session_state.mon_portefeuille]
         if noms:
@@ -138,7 +129,7 @@ if st.session_state.mon_portefeuille:
 # --- 6. SIDEBAR ---
 with st.sidebar:
     st.header("🔍 Ajouter un Titre")
-    q = st.text_input("Nom ou ISIN")
+    q = st.text_input("Recherche Nom/ISIN")
     t_sug, n_sug = "", ""
     if q:
         try:
@@ -163,9 +154,22 @@ with st.sidebar:
                     "Nom": f_n, "ISIN": f_isin, "Ticker": f_t.upper(), "PRU": f_p, 
                     "Qté": f_q, "Seuil_Haut": f_h, "Date_Achat": str(f_d)
                 })
-                sauvegarder_donnees(st.session_state.mon_portefeuille)
-                st.rerun()
-
+                sauvegarder_donnees(st.session_state.mon_portefeuille); st.rerun()
+    
     st.divider()
+    st.header("💾 Maintenance")
+    # BACKUP
     df_b = pd.DataFrame(st.session_state.mon_portefeuille)
-    st.download_button("📥 Backup", df_b.to_csv(index=False).encode('utf-8'), "data.csv", use_container_width=True)
+    st.download_button("📥 Télécharger CSV", df_b.to_csv(index=False).encode('utf-8'), "portefeuille.csv", use_container_width=True)
+    
+    # RESTORE (LE BOUTON REVENU ICI)
+    up = st.file_uploader("📤 Restaurer CSV", type="csv")
+    if up:
+        new_df = pd.read_csv(up)
+        st.session_state.mon_portefeuille = new_df.to_dict('records')
+        sauvegarder_donnees(st.session_state.mon_portefeuille)
+        st.success("Données restaurées !")
+        st.rerun()
+
+
+
