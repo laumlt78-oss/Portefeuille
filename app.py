@@ -9,6 +9,7 @@ USER_KEY = "uy24daw7gs19ivfhwh7wgsy8amajc8"
 API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
 
 
+
 def envoyer_alerte(message):
     if USER_KEY != "VOTRE_USER_KEY_ICI":
         try:
@@ -38,25 +39,30 @@ def sauvegarder_donnees(liste_actions):
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_donnees()
 
-# --- 3. TITRE ET ZONE DE MAINTENANCE ---
+# --- 3. TITRE ET ZONE DE SAUVEGARDE ---
 st.title("📈 Mon Portefeuille")
 
+# Zone de boutons en haut à droite plus propre
 col_t1, col_t2 = st.columns([3, 1])
 with col_t2:
-    st.write("💾 **Sauvegarde / Import**")
+    # Bouton Export
     if st.session_state.mon_portefeuille:
         df_export = pd.DataFrame(st.session_state.mon_portefeuille)
         csv = df_export.to_csv(index=False).encode('utf-8')
-        st.download_button(label="📥 Exporter Backup", data=csv, file_name='backup_portefeuille.csv', mime='text/csv')
+        st.download_button(label="📥 Sauvegarder (Backup)", data=csv, file_name='backup_portefeuille.csv', mime='text/csv', use_container_width=True)
     
-    uploaded_file = st.file_uploader("📤 Restaurer", type="csv", label_visibility="collapsed")
-    if uploaded_file is not None:
+    # Bouton Import avec gestion d'erreur corrigée
+    uploaded_file = st.file_uploader("Restaurer un fichier", type="csv", label_visibility="collapsed")
+    if uploaded_file:
         try:
-            st.session_state.mon_portefeuille = pd.read_csv(uploaded_file).to_dict('records')
-            sauvegarder_donnees(st.session_state.mon_portefeuille)
-            st.success("Données restaurées !")
-            st.rerun()
-        except: st.error("Fichier invalide.")
+            data_import = pd.read_csv(uploaded_file)
+            if not data_import.empty:
+                st.session_state.mon_portefeuille = data_import.to_dict('records')
+                sauvegarder_donnees(st.session_state.mon_portefeuille)
+                st.success("✅ Importé")
+                st.rerun()
+        except Exception:
+            st.error("❌ Erreur de lecture")
 
 st.divider()
 
@@ -93,15 +99,10 @@ if st.session_state.mon_portefeuille:
     total_actuel, total_achat = 0, 0
     donnees = []
 
-    # Message informatif si weekend/férié
-    st.caption("ℹ️ Cotations : récupère le dernier prix de clôture connu (Yahoo Finance)")
-
     for act in st.session_state.mon_portefeuille:
         try:
             t = yf.Ticker(act['Ticker'])
-            # Sécurité Marché Fermé : On tente fast_info puis history si besoin
             prix = t.fast_info['lastPrice']
-            
             if prix is None or prix == 0:
                 hist = t.history(period="1d")
                 prix = hist['Close'].iloc[-1] if not hist.empty else 0
@@ -113,7 +114,7 @@ if st.session_state.mon_portefeuille:
         except:
             donnees.append({"act": act, "prix": 0, "val_act": 0})
 
-    # KPI Résumé en haut
+    # KPI Résumé
     pv_g_e = total_actuel - total_achat
     pv_g_p = (pv_g_e / total_achat * 100) if total_achat > 0 else 0
     c_m1, c_m2 = st.columns(2)
@@ -121,21 +122,17 @@ if st.session_state.mon_portefeuille:
     c_m2.metric("P/L GLOBAL", f"{pv_g_e:.2f} €", delta=f"{pv_g_p:+.2f} %")
     st.divider()
 
-    # Affichage des actions (Expanders)
+    # Affichage des actions
     for i, item in enumerate(donnees):
         act, prix, val_act = item['act'], item['prix'], item['val_act']
-        
-        # Calculs individuels
         perf = ((prix / act['PRU']) - 1) * 100 if act['PRU'] > 0 else 0
         pv_e = (prix - act['PRU']) * act['Qté']
         
-        # Style du bandeau (Pastille et Signe)
         color_circle = "🟢" if pv_e >= 0 else "🔴"
         signe = "+" if pv_e >= 0 else ""
         header = f"{color_circle} {act['Nom']} | {prix:.2f}€ | {perf:+.2f}% | {signe}{pv_e:.2f}€"
         
         with st.expander(header):
-            # Affichage de la plus/moins value colorée à l'intérieur
             color_style = "green" if pv_e >= 0 else "red"
             st.markdown(f"<h3 style='color:{color_style}; text-align:center;'>{signe}{pv_e:.2f} €</h3>", unsafe_allow_html=True)
 
@@ -150,4 +147,13 @@ if st.session_state.mon_portefeuille:
                 st.write(f"Part : {(val_act/total_actuel*100):.2f}%")
             with c3:
                 st.write("**Seuils**")
-                st.write(f"Bas (-20%) : {(act['PRU']*0.
+                st.write(f"Bas (-20%) : {(act['PRU']*0.8):.2f}€")
+                st.write(f"Haut : {act['Seuil_Haut']:.2f}€")
+            with c4:
+                st.write("**Action**")
+                if st.button("🗑️ Supprimer", key=f"del_{i}"):
+                    st.session_state.mon_portefeuille.pop(i)
+                    sauvegarder_donnees(st.session_state.mon_portefeuille)
+                    st.rerun()
+else:
+    st.info("👋 Portefeuille vide. Ajoutez un titre ou restaurez un backup.")
