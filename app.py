@@ -15,7 +15,7 @@ API_TOKEN = "a2d5he9d9idw5e4rkoapym7kwfs9ha"
 
 
 def envoyer_alerte(message):
-    if USER_KEY != "VOTRE_USER_KEY_ICI":
+    if USER_KEY != "Vuy24daw7gs19ivfhwh7wgsy8amajc8":
         try:
             requests.post("https://api.pushover.net/1/messages.json", data={
                 "token": API_TOKEN, "user": USER_KEY, "message": message
@@ -32,7 +32,6 @@ def charger_donnees():
         return []
     try:
         df = pd.read_csv(FICHIER_DATA)
-        # S'assurer que toutes les colonnes nécessaires existent
         for col in ['Date_Achat', 'Seuil_Haut', 'ISIN']:
             if col not in df.columns:
                 df[col] = "" if col == 'ISIN' else (0.0 if col == 'Seuil_Haut' else str(date.today()))
@@ -77,13 +76,6 @@ if st.session_state.mon_portefeuille:
                 var_jour += (p_act - p_prev) * int(act['Qté'])
                 
                 donnees_pos.append({"idx": i, "act": act, "prix": p_act, "var": (p_act - p_prev) * int(act['Qté']), "val": v_act})
-                
-                # Alertes Pushover
-                if p_act > 0:
-                    if p_act <= (float(act['PRU']) * 0.80):
-                        envoyer_alerte(f"🚨 ALERTE BASSE : {act['Nom']} ({p_act:.2f}€)")
-                    if float(act.get('Seuil_Haut', 0)) > 0 and p_act >= float(act['Seuil_Haut']):
-                        envoyer_alerte(f"🎯 OBJECTIF ATTEINT : {act['Nom']} ({p_act:.2f}€)")
         except: pass
 
     # --- ONGLET PORTEFEUILLE ---
@@ -99,9 +91,11 @@ if st.session_state.mon_portefeuille:
             idx, a, p = item['idx'], item['act'], item['prix']
             pv_l = (p - float(a['PRU'])) * int(a['Qté'])
             
-            # Affichage ISIN à droite dans le bandeau
-            isin_txt = f" | {a.get('ISIN', '')}" if a.get('ISIN') else ""
-            header = f"{'🟢' if pv_l >= 0 else '🔴'} {a['Nom']} | {p:.2f}€ | {pv_l:+.2f}€ {isin_txt}"
+            # --- CORRECTION TITRE BANDEAU ---
+            val_isin = str(a.get('ISIN', '')).strip()
+            # On construit le titre : Pastille | Nom | Prix | Gain | (ISIN)
+            # Le ISIN est placé à la fin pour être visible
+            header = f"{'🟢' if pv_l >= 0 else '🔴'} {a['Nom']} | {p:.2f}€ | {pv_l:+.2f}€ | {val_isin}"
             
             with st.expander(header):
                 edit_mode = st.toggle("📝 Modifier", key=f"edit_mode_{idx}")
@@ -110,7 +104,7 @@ if st.session_state.mon_portefeuille:
                     with st.form(f"form_edit_{idx}"):
                         col_e1, col_e2 = st.columns(2)
                         new_nom = col_e1.text_input("Nom", value=a['Nom'])
-                        new_isin = col_e2.text_input("Code ISIN", value=a.get('ISIN', ''))
+                        new_isin = col_e2.text_input("Code ISIN", value=val_isin)
                         new_pru = col_e1.number_input("PRU", value=float(a['PRU']), format="%.2f")
                         new_qte = col_e2.number_input("Quantité", value=int(a['Qté']), min_value=1)
                         new_obj = col_e1.number_input("Objectif", value=float(a.get('Seuil_Haut', 0.0)))
@@ -124,8 +118,9 @@ if st.session_state.mon_portefeuille:
                             sauvegarder_donnees(st.session_state.mon_portefeuille)
                             st.rerun()
                 else:
-                    st.write(f"**ISIN :** {a.get('ISIN', 'N/A')} | **Date Achat :** {a.get('Date_Achat', 'N/A')}")
-                    st.write(f"**Valeur :** {item['val']:.2f}€ | **Var. Jour :** {item['var']:+.2f}€ | **Objectif :** {a.get('Seuil_Haut', 0)}€")
+                    st.write(f"**Code ISIN :** {val_isin if val_isin else 'Non renseigné'}")
+                    st.write(f"**Date Achat :** {a.get('Date_Achat', 'N/A')} | **Objectif :** {a.get('Seuil_Haut', 0)}€")
+                    st.write(f"**Valeur :** {item['val']:.2f}€ | **Var. Jour :** {item['var']:+.2f}€")
                     if st.button("🗑️ Supprimer", key=f"del_btn_{idx}"):
                         st.session_state.mon_portefeuille.pop(idx)
                         sauvegarder_donnees(st.session_state.mon_portefeuille)
