@@ -72,6 +72,7 @@ if st.session_state.mon_portefeuille:
             
             pru = float(act['PRU'])
             qte = float(act['Qté'])
+            # Calcul rétroactif du seuil bas si 0
             s_b = float(act.get('Seuil_Bas', 0))
             if s_b == 0: s_b = pru * 0.7
             
@@ -108,7 +109,10 @@ with st.sidebar:
         if st.form_submit_button("Ajouter"):
             if n and t:
                 v_sb = sb if sb > 0 else (p * 0.7)
-                st.session_state.mon_portefeuille.append({"Nom":n,"ISIN":i,"Ticker":t.upper(),"PRU":p,"Qté":q,"Date_Achat":str(d),"Seuil_Haut":sh,"Seuil_Bas":v_sb})
+                st.session_state.mon_portefeuille.append({
+                    "Nom": n, "ISIN": i, "Ticker": t.upper(), "PRU": p, "Qté": q, 
+                    "Date_Achat": str(d), "Seuil_Haut": sh, "Seuil_Bas": v_sb
+                })
                 sauvegarder_vers_github(st.session_state.mon_portefeuille)
                 st.rerun()
 
@@ -118,10 +122,13 @@ tab1, tab2, tab3 = st.tabs(["📊 Portefeuille", "📈 Graphiques Actions", "�
 with tab1:
     for p in positions_calculees:
         a = p['act']
-        # Icône dynamique
-        if p['c_act'] > 0 and p['c_act'] < p['sb']: icone = "⚠️"
-        elif p['pv'] >= 0: icone = "🟢"
-        else: icone = "🔴"
+        # Détermination de l'icône d'état
+        if p['c_act'] > 0 and p['c_act'] < p['sb']: 
+            icone = "⚠️"
+        elif p['pv'] >= 0: 
+            icone = "🟢"
+        else: 
+            icone = "🔴"
 
         titre_ligne = f"{icone} {a['Nom']} | {p['c_act']:.2f}€ | {p['pv']:+.2f}€ ({p['pc']:+.2f}%)"
 
@@ -137,16 +144,44 @@ with tab1:
                 st.write(f"**Seuil Haut:** {a.get('Seuil_Haut', 0):.2f}€")
                 st.write(f"**Seuil Bas:** {p['sb']:.2f}€")
             with c4:
-                if st.button("✏️", key=f"edit_{p['idx']}"): st.session_state[f"m_{p['idx']}"] = True
+                if st.button("✏️", key=f"edit_{p['idx']}"): 
+                    st.session_state[f"m_{p['idx']}"] = True
                 if st.button("🗑️", key=f"del_{p['idx']}"):
                     st.session_state.mon_portefeuille.pop(p['idx'])
                     sauvegarder_vers_github(st.session_state.mon_portefeuille)
                     st.rerun()
             
+            # Formulaire de modification
             if st.session_state.get(f"m_{p['idx']}", False):
                 with st.form(f"f_{p['idx']}"):
                     n_pru = st.number_input("PRU", value=float(a['PRU']))
                     n_qte = st.number_input("Qté", value=float(a['Qté']))
                     n_sh = st.number_input("Seuil Haut", value=float(a.get('Seuil_Haut', 0)))
                     n_sb = st.number_input("Seuil Bas", value=float(p['sb']))
-                    if st.form_submit_button
+                    if st.form_submit_button("Sauvegarder"):
+                        st.session_state.mon_portefeuille[p['idx']].update({
+                            "PRU": n_pru, "Qté": n_qte, "Seuil_Haut": n_sh, "Seuil_Bas": n_sb
+                        })
+                        sauvegarder_vers_github(st.session_state.mon_portefeuille)
+                        del st.session_state[f"m_{p['idx']}"]
+                        st.rerun()
+
+with tab2:
+    if st.session_state.mon_portefeuille:
+        sel = st.selectbox("Sélectionner l'action", [x['Nom'] for x in st.session_state.mon_portefeuille])
+        info = next(x for x in st.session_state.mon_portefeuille if x['Nom'] == sel)
+        df_h = yf.download(info['Ticker'], start=info['Date_Achat'], progress=False)
+        tracer_courbe(df_h, info['Nom'], pru=info['PRU'], s_h=info.get('Seuil_Haut'), s_b=info.get('Seuil_Bas'))
+
+with tab3:
+    st.subheader("Performance historique du portefeuille (1 mois)")
+    tickers = [x['Ticker'] for x in st.session_state.mon_portefeuille]
+    if tickers:
+        data = yf.download(tickers, period="1mo", progress=False)['Close']
+        if not data.empty:
+            if isinstance(data, pd.Series): data = data.to_frame()
+            val_port = pd.Series(0, index=data.index)
+            for act in st.session_state.mon_portefeuille:
+                if act['Ticker'] in data.columns:
+                    val_port += data[act['Ticker']] * float(act['Qté'])
+            tracer_courbe(pd.DataFrame({'Close': val_port}), "Valeur totale cumulée")
