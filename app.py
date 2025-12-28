@@ -13,13 +13,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Correction du paramètre : unsafe_allow_html
-st.markdown("""
-    <style>
-        [data-testid="stSidebar"] { min-width: 350px; max-width: 350px; }
-    </style>
-    """, unsafe_allow_html=True)
-
 try:
     GH_TOKEN = st.secrets["GH_TOKEN"]
     GH_REPO = st.secrets["GH_REPO"]
@@ -105,12 +98,13 @@ def tracer_courbe(df, titre, pru=None):
         height=500, margin=dict(l=10, r=50, t=50, b=80))
     st.plotly_chart(fig, use_container_width=True)
 
-# --- 5. AFFICHAGE ET CALCULS ---
-tab_p, tab_g = st.tabs(["📊 Portefeuille", "📈 Graphiques"])
+# --- 5. AFFICHAGE DES ONGLETS ---
+tab_p, tab_g, tab_h = st.tabs(["📊 Portefeuille", "📈 Graphiques Actions", "🌍 Graphe Portefeuille"])
 
 donnees_pos = []
 total_actuel, total_achat = 0.0, 0.0
 
+# On pré-calcule les données pour éviter de bloquer l'affichage des onglets
 if st.session_state.mon_portefeuille:
     for i, act in enumerate(st.session_state.mon_portefeuille):
         try:
@@ -122,7 +116,8 @@ if st.session_state.mon_portefeuille:
                 total_actuel += (p_act * float(act['Qté']))
                 total_achat += (float(act['PRU']) * float(act['Qté']))
                 donnees_pos.append({"idx": i, "act": act, "prix": p_act, "val": p_act * float(act['Qté'])})
-        except: pass
+        except:
+            continue
 
 with tab_p:
     if total_achat > 0:
@@ -137,8 +132,8 @@ with tab_p:
             col1, col2, col3 = st.columns(3)
             col1.write(f"**ISIN :** {a.get('ISIN')}")
             col1.write(f"**PRU :** {a.get('PRU')} €")
-            col1.write(f"**Quantité :** {a.get('Qté')}")
-            col2.write(f"**Date Achat :** {a.get('Date_Achat')}")
+            col1.write(f"**Qté :** {a.get('Qté')}")
+            col2.write(f"**Achat :** {a.get('Date_Achat')}")
             col2.write(f"**Objectif :** {a.get('Objectif')} €")
             col2.write(f"**Valeur :** {item['val']:.2f} €")
             col3.write(f"**Seuil Haut :** {a.get('Seuil_Haut')} €")
@@ -152,10 +147,21 @@ with tab_g:
     if st.session_state.mon_portefeuille:
         choix = st.selectbox("Action :", [x['Nom'] for x in st.session_state.mon_portefeuille])
         info = next(x for x in st.session_state.mon_portefeuille if x['Nom'] == choix)
-        tx1, tx2 = st.tabs(["Depuis l'achat", "Journée"])
+        tx1, tx2, tx3 = st.tabs(["Depuis l'achat", "Mois", "Journée"])
         with tx1:
             df = yf.download(info['Ticker'], start=info['Date_Achat'], progress=False)
             tracer_courbe(df, f"Historique {info['Nom']}", pru=info['PRU'])
         with tx2:
+            df = yf.download(info['Ticker'], start=datetime.now()-timedelta(days=30), progress=False)
+            tracer_courbe(df, "Dernier Mois", pru=info['PRU'])
+        with tx3:
             df = yf.download(info['Ticker'], period="1d", interval="5m", progress=False)
             tracer_courbe(df, "Séance du jour", pru=info['PRU'])
+
+with tab_h:
+    st.subheader("Performance du Portefeuille Global")
+    tickers_list = [x['Ticker'] for x in st.session_state.mon_portefeuille]
+    if tickers_list:
+        h1, h2 = st.tabs(["Dernière Semaine", "Journée"])
+        with h1:
+            data = yf.download(tickers_list, period="7d", progress=False
