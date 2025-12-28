@@ -52,59 +52,62 @@ def tracer_courbe(df, titre, pru=None, intervalle="1d"):
         st.warning("Pas de données disponibles pour cette période.")
         return
 
-    # Nettoyage des données pour éviter les trous
+    # --- CORRECTIF POUR L'ERREUR KEYERROR ---
+    # Si Yahoo renvoie des colonnes complexes, on ne garde que le premier niveau
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    
+    # Vérification de la présence de la colonne Close
+    if 'Close' not in df.columns:
+        st.error(f"Erreur : Colonne 'Close' introuvable dans les données.")
+        return
+
+    # Nettoyage
     df = df.dropna(subset=['Close'])
     
     fig = go.Figure()
     
-    # Courbe avec ligne et points discrets au survol
+    # Courbe
     fig.add_trace(go.Scatter(
         x=df.index, 
         y=df['Close'].round(2),
         mode='lines',
         line=dict(color='#00FF00', width=1.5),
-        name="Prix de clôture",
+        name="Prix",
         hovertemplate="<b>Date</b>: %{x|%d/%m/%y}<br><b>Prix</b>: %{y:.2f} €<extra></extra>"
     ))
 
-    # Ligne de PRU (Prix de revient unitaire)
+    # Ligne de PRU
     if pru:
         fig.add_hline(
             y=float(pru), 
             line_dash="dash", 
             line_color="orange", 
             annotation_text=f"PRU: {pru:.2f}€", 
-            annotation_position="top left",
-            annotation_font=dict(color="orange", size=12)
+            annotation_position="top left"
         )
 
-    # Configuration précise des axes pour un rendu "expert"
+    # Configuration des axes (Format jj/mm/yy et 2 décimales)
     fig.update_layout(
-        title=dict(text=titre, font=dict(size=18, color="white")),
+        title=dict(text=titre, font=dict(size=18)),
         template="plotly_dark",
-        hovermode="x unified", # Affiche la bulle sur toute la ligne verticale
+        hovermode="x unified",
         xaxis=dict(
-            title="Date (jj/mm/yy)",
             tickformat="%d/%m/%y",
-            tickangle=-45,          # Inclinaison des dates pour en mettre plus
+            tickangle=-45,
             showgrid=True,
             gridcolor='rgba(255,255,255,0.1)',
-            nticks=20,              # Force l'affichage de plus de dates
-            type='date'
+            nticks=20
         ),
         yaxis=dict(
             side="right",
             tickformat=".2f",
-            title="Prix (€)",
             showgrid=True,
             gridcolor='rgba(255,255,255,0.1)',
-            tickprefix="",
             ticksuffix=" €"
         ),
         height=500,
-        margin=dict(l=20, r=50, t=60, b=80), # Plus d'espace en bas pour les dates inclinées
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)"
+        margin=dict(l=20, r=50, t=60, b=80)
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -213,4 +216,5 @@ with st.sidebar:
         df_up = pd.read_csv(up)
         st.session_state.mon_portefeuille = df_up.to_dict('records')
         sauvegarder_vers_github(st.session_state.mon_portefeuille); st.rerun()
+
 
