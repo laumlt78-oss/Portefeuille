@@ -9,14 +9,17 @@ from datetime import date, datetime
 # --- 1. CONFIGURATION SECRETS ---
 try:
     USER_KEY = st.secrets["PUSHOVER_USER_KEY"]
-    API_TOKEN = st.secrets["PUSHOVER_API_TOKEN"]
+    # On essaie de récupérer la clé, peu importe son nom
+    API_TOKEN = st.secrets.get("API_TOKEN") or st.secrets.get("PUSHOVER_API_TOKEN")
     GH_TOKEN = st.secrets["GH_TOKEN"]
     GH_REPO = st.secrets["GH_REPO"]
+    
+    if not API_TOKEN:
+        st.error("La clé API_TOKEN est manquante dans les Secrets Streamlit.")
+        st.stop()
 except Exception as e:
-    st.error(f"Secrets manquants : {e}")
+    st.error(f"Erreur de configuration des Secrets : {e}")
     st.stop()
-
-st.set_page_config(page_title="Portefeuille Bourse Pro", layout="wide")
 
 # --- 2. GESTION GITHUB ---
 FICHIER_DATA = "portefeuille_data.csv"
@@ -180,5 +183,6 @@ with st.sidebar:
     dt_s = datetime.now().strftime("%Y%m%d_%H%M")
     df_dl = pd.DataFrame(st.session_state.mon_portefeuille)
     st.download_button(f"📥 Backup PC ({dt_s})", df_dl.to_csv(index=False), f"portefeuille_{dt_s}.csv")
+
 
 
