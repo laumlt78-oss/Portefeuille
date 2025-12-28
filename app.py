@@ -57,23 +57,62 @@ if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_depuis_github()
 
 # --- 3. GRAPHISMES ---
-def tracer_graphe(ticker, date_achat, nom):
+def tracer_graphe(ticker, date_achat_str, nom):
     try:
-        df_h = yf.download(ticker, start=date_achat, progress=False)
+        # 1. Calcul de la date de début pour avoir du contexte
+        d_achat = datetime.strptime(date_achat_str, '%Y-%m-%d').date()
+        # On remonte 30 jours avant l'achat pour voir la tendance d'arrivée
+        d_debut_vue = d_achat - pd.Timedelta(days=30)
+        
+        # 2. Téléchargement des données
+        df_h = yf.download(ticker, start=d_debut_vue, progress=False)
+        
         if not df_h.empty:
-            fig = go.Figure(go.Scatter(x=df_h.index, y=df_h['Close'], line=dict(color='#00FF00', width=2)))
+            fig = go.Figure()
+
+            # Courbe des cours
+            fig.add_trace(go.Scatter(
+                x=df_h.index, 
+                y=df_h['Close'], 
+                line=dict(color='#00FF00', width=2),
+                name="Cours",
+                hovertemplate="Date: %{x}<br>Prix: %{y:.2f} €" # Format 2 décimales
+            ))
+
+            # Ligne horizontale du PRU (Prix d'achat)
+            pru_val = float(next(x['PRU'] for x in st.session_state.mon_portefeuille if x['Nom'] == nom))
+            fig.add_hline(
+                y=pru_val, 
+                line_dash="dash", 
+                line_color="orange", 
+                annotation_text=f"Mon PRU: {pru_val:.2f}€",
+                annotation_position="top left"
+            )
+
+            # Ligne verticale Date d'achat
+            fig.add_vline(x=d_achat, line_width=1, line_dash="dot", line_color="white")
+
             fig.update_layout(
-                title=f"Evolution de {nom} depuis l'achat ({date_achat})",
+                title=f"Historique {nom} (Achat le {d_achat.strftime('%d/%m/%Y')})",
                 template="plotly_dark",
-                xaxis=dict(tickformat="%d %b %y", showgrid=False),
-                yaxis=dict(side="right", title="Prix (€)"),
-                height=450
+                xaxis=dict(
+                    tickformat="%d %b %y",
+                    rangeslider=dict(visible=False), # Désactive le slider pour gagner de la place
+                    showgrid=False
+                ),
+                yaxis=dict(
+                    side="right", 
+                    title="Prix (€)",
+                    tickformat=".2f" # Force 2 chiffres après la virgule sur l'axe
+                ),
+                height=450,
+                margin=dict(l=20, r=20, t=60, b=20)
             )
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.warning("Données boursières introuvables.")
-    except:
-        st.error("Erreur graphique.")
+            st.warning(f"Impossible de récupérer l'historique pour {ticker}. Vérifiez le symbole sur Yahoo Finance.")
+    except Exception as e:
+        st.error(f"Erreur lors du tracé : {e}")
 
 # --- 4. CALCULS ET ONGLETS ---
 tab_p, tab_g = st.tabs(["📊 Mon Portefeuille", "📈 Graphiques Historiques"])
@@ -183,6 +222,7 @@ with st.sidebar:
     dt_s = datetime.now().strftime("%Y%m%d_%H%M")
     df_dl = pd.DataFrame(st.session_state.mon_portefeuille)
     st.download_button(f"📥 Backup PC ({dt_s})", df_dl.to_csv(index=False), f"portefeuille_{dt_s}.csv")
+
 
 
 
