@@ -155,3 +155,52 @@ with st.sidebar:
     # --- LE CORRECTIF DE RESTAURATION ---
     up = st.file_uploader("📤 Restaurer depuis PC", type="csv")
     if up:
+# --- 5. SIDEBAR (AJOUT ET RESTAURATION) ---
+with st.sidebar:
+    st.header("🔍 Gestion")
+    with st.form("add_form", clear_on_submit=True):
+        f_n = st.text_input("Nom")
+        f_i = st.text_input("ISIN")
+        f_t = st.text_input("Ticker (ex: AI.PA)")
+        f_p = st.number_input("PRU", min_value=0.0, format="%.2f")
+        f_q = st.number_input("Quantité", min_value=0.0, format="%.2f")
+        f_d = st.date_input("Date d'achat", value=date.today())
+        if st.form_submit_button("Ajouter"):
+            if f_n and f_t:
+                st.session_state.mon_portefeuille.append({
+                    "Nom": f_n, "ISIN": f_i, "Ticker": f_t.upper(),
+                    "PRU": f_p, "Qté": f_q, "Date_Achat": str(f_d)
+                })
+                sauvegarder_vers_github(st.session_state.mon_portefeuille)
+                st.rerun()
+
+    st.divider()
+    st.subheader("⚙️ Maintenance")
+    
+    # --- BLOC RESTAURATION CORRIGÉ ---
+    up = st.file_uploader("📤 Restaurer depuis PC", type="csv")
+    if up:
+        try:
+            df_up = pd.read_csv(up)
+            # Vérifie et ajoute les colonnes manquantes
+            for col in COLS_VALIDEES:
+                if col not in df_up.columns:
+                    # Correction : on définit une valeur par défaut selon la colonne
+                    if col in ['ISIN', 'Nom', 'Ticker']:
+                        df_up[col] = ""
+                    elif col == 'Date_Achat':
+                        df_up[col] = str(date.today())
+                    else:
+                        df_up[col] = 0.0
+            
+            st.session_state.mon_portefeuille = df_up.to_dict('records')
+            sauvegarder_vers_github(st.session_state.mon_portefeuille)
+            st.success("✅ Données synchronisées sur GitHub !")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Fichier invalide : {e}")
+    
+    # Backup
+    dt_s = datetime.now().strftime("%Y%m%d_%H%M")
+    df_dl = pd.DataFrame(st.session_state.mon_portefeuille)
+    st.download_button(f"📥 Backup PC ({dt_s})", df_dl.to_csv(index=False), f"portefeuille_{dt_s}.csv")
