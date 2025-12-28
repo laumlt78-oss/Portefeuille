@@ -9,7 +9,7 @@ from datetime import date, datetime
 # --- 1. CONFIGURATION SECRETS ---
 try:
     USER_KEY = st.secrets["PUSHOVER_USER_KEY"]
-    API_TOKEN = st.secrets["API_TOKEN"]
+    API_TOKEN = st.secrets["PUSHOVER_API_TOKEN"]
     GH_TOKEN = st.secrets["GH_TOKEN"]
     GH_REPO = st.secrets["GH_REPO"]
 except Exception as e:
@@ -180,4 +180,5 @@ with st.sidebar:
     dt_s = datetime.now().strftime("%Y%m%d_%H%M")
     df_dl = pd.DataFrame(st.session_state.mon_portefeuille)
     st.download_button(f"📥 Backup PC ({dt_s})", df_dl.to_csv(index=False), f"portefeuille_{dt_s}.csv")
+
 
