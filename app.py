@@ -17,10 +17,10 @@ try:
     GH_TOKEN = st.secrets["GH_TOKEN"]
     GH_REPO = st.secrets["GH_REPO"]
 except Exception as e:
-    st.error("Secrets GitHub manquants.")
+    st.error("Configuration Secrets (GitHub) manquante.")
     st.stop()
 
-# --- 2. GESTION DONNÉES ---
+# --- 2. GESTION DONNÉES GITHUB ---
 FICHIER_DATA = "portefeuille_data.csv"
 HEADERS_GH = {"Authorization": f"token {GH_TOKEN}"}
 
@@ -48,7 +48,41 @@ def sauvegarder_vers_github(liste):
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_depuis_github()
 
-# --- 3. BANDEAU DE GAUCHE (SIDEBAR) ---
+# --- 3. MOTEUR DE GRAPHIQUES ---
+def tracer_courbe(df, titre, pru=None):
+    if df is None or df.empty:
+        st.warning("Données indisponibles.")
+        return
+    
+    # Aplatir le MultiIndex si nécessaire
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    
+    df = df.dropna(subset=['Close'])
+    fig = go.Figure()
+    
+    # Courbe principale
+    fig.add_trace(go.Scatter(
+        x=df.index, y=df['Close'].round(2),
+        mode='lines', line=dict(color='#00FF00', width=1.5),
+        hovertemplate="<b>Date</b>: %{x|%d/%m/%y}<br><b>Prix</b>: %{y:.2f} €<extra></extra>"
+    ))
+    
+    # Ligne PRU
+    if pru:
+        fig.add_hline(y=float(pru), line_dash="dash", line_color="orange", 
+                      annotation_text=f"PRU: {pru:.2f}€", annotation_position="top left")
+
+    fig.update_layout(
+        title=dict(text=titre, font=dict(size=18)),
+        template="plotly_dark", hovermode="x unified",
+        xaxis=dict(tickformat="%d/%m/%y", tickangle=-45, nticks=20, showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
+        yaxis=dict(side="right", tickformat=".2f", ticksuffix=" €", showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
+        height=500, margin=dict(l=10, r=50, t=50, b=80)
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# --- 4. BANDEAU DE GAUCHE (SIDEBAR) ---
 with st.sidebar:
     st.title("⚙️ Gestion")
     with st.form("form_ajout", clear_on_submit=True):
@@ -58,11 +92,12 @@ with st.sidebar:
         f_t = st.text_input("Ticker (ex: MC.PA)")
         f_p = st.number_input("PRU", min_value=0.0, format="%.2f")
         f_q = st.number_input("Quantité", min_value=0.0, format="%.2f")
-        f_d = st.date_input("Date d'achat")
-        st.write("---")
+        f_d = st.date_input("Date d'achat", value=date.today())
+        st.divider()
         f_obj = st.number_input("Objectif", min_value=0.0, format="%.2f")
         f_sh = st.number_input("Seuil Haut", min_value=0.0, format="%.2f")
         f_sb = st.number_input("Seuil Bas", min_value=0.0, format="%.2f")
+        
         if st.form_submit_button("Valider l'ajout"):
             if f_n and f_t:
                 st.session_state.mon_portefeuille.append({
@@ -73,38 +108,20 @@ with st.sidebar:
                 sauvegarder_vers_github(st.session_state.mon_portefeuille)
                 st.rerun()
     st.divider()
-    up = st.file_uploader("📥 Restaurer CSV", type="csv")
+    up = st.file_uploader("📥 Restaurer via CSV", type="csv")
     if up:
         df_up = pd.read_csv(up)
         st.session_state.mon_portefeuille = df_up.to_dict('records')
         sauvegarder_vers_github(st.session_state.mon_portefeuille)
+        st.success("Import réussi !")
         st.rerun()
 
-# --- 4. MOTEUR DE GRAPHIQUES ---
-def tracer_courbe(df, titre, pru=None):
-    if df is None or df.empty:
-        st.warning("Données indisponibles.")
-        return
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    df = df.dropna(subset=['Close'])
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'].round(2), mode='lines', line=dict(color='#00FF00', width=1.5),
-        hovertemplate="<b>Date</b>: %{x|%d/%m/%y}<br><b>Prix</b>: %{y:.2f} €<extra></extra>"))
-    if pru:
-        fig.add_hline(y=float(pru), line_dash="dash", line_color="orange", annotation_text=f"PRU: {pru:.2f}€")
-    fig.update_layout(template="plotly_dark", hovermode="x unified",
-        xaxis=dict(tickformat="%d/%m/%y", tickangle=-45, nticks=20, showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
-        yaxis=dict(side="right", tickformat=".2f", ticksuffix=" €", showgrid=True, gridcolor='rgba(255,255,255,0.05)'),
-        height=500, margin=dict(l=10, r=50, t=50, b=80))
-    st.plotly_chart(fig, use_container_width=True)
-
-# --- 5. AFFICHAGE DES ONGLETS ---
+# --- 5. CALCULS ET ONGLETS PRINCIPAUX ---
 tab_p, tab_g, tab_h = st.tabs(["📊 Portefeuille", "📈 Graphiques Actions", "🌍 Graphe Portefeuille"])
 
 donnees_pos = []
 total_actuel, total_achat = 0.0, 0.0
 
-# On pré-calcule les données pour éviter de bloquer l'affichage des onglets
 if st.session_state.mon_portefeuille:
     for i, act in enumerate(st.session_state.mon_portefeuille):
         try:
@@ -116,8 +133,7 @@ if st.session_state.mon_portefeuille:
                 total_actuel += (p_act * float(act['Qté']))
                 total_achat += (float(act['PRU']) * float(act['Qté']))
                 donnees_pos.append({"idx": i, "act": act, "prix": p_act, "val": p_act * float(act['Qté'])})
-        except:
-            continue
+        except: continue
 
 with tab_p:
     if total_achat > 0:
@@ -125,20 +141,24 @@ with tab_p:
         c1.metric("VALEUR TOTALE", f"{total_actuel:.2f} €")
         pl = total_actuel - total_achat
         c2.metric("P/L GLOBAL", f"{pl:.2f} €", delta=f"{(pl/total_achat*100):+.2f} %")
+        st.divider()
     
     for item in donnees_pos:
         a, idx = item['act'], item['idx']
-        with st.expander(f"📌 {a['Nom']} ({a['Ticker']})"):
+        p_act = item['prix']
+        diff = (p_act - float(a['PRU'])) * float(a['Qté'])
+        header = f"{'🟢' if diff >= 0 else '🔴'} {a['Nom']} | {p_act:.2f}€ | {diff:+.2f}€"
+        with st.expander(header):
             col1, col2, col3 = st.columns(3)
             col1.write(f"**ISIN :** {a.get('ISIN')}")
             col1.write(f"**PRU :** {a.get('PRU')} €")
-            col1.write(f"**Qté :** {a.get('Qté')}")
-            col2.write(f"**Achat :** {a.get('Date_Achat')}")
+            col1.write(f"**Quantité :** {a.get('Qté')}")
+            col2.write(f"**Date Achat :** {a.get('Date_Achat')}")
             col2.write(f"**Objectif :** {a.get('Objectif')} €")
             col2.write(f"**Valeur :** {item['val']:.2f} €")
             col3.write(f"**Seuil Haut :** {a.get('Seuil_Haut')} €")
             col3.write(f"**Seuil Bas :** {a.get('Seuil_Bas')} €")
-            if st.button("Supprimer", key=f"btn_{idx}"):
+            if st.button("🗑️ Supprimer", key=f"btn_{idx}"):
                 st.session_state.mon_portefeuille.pop(idx)
                 sauvegarder_vers_github(st.session_state.mon_portefeuille)
                 st.rerun()
@@ -156,12 +176,32 @@ with tab_g:
             tracer_courbe(df, "Dernier Mois", pru=info['PRU'])
         with tx3:
             df = yf.download(info['Ticker'], period="1d", interval="5m", progress=False)
-            tracer_courbe(df, "Séance du jour", pru=info['PRU'])
+            tracer_courbe(df, "Séance du jour (Intraday)", pru=info['PRU'])
 
 with tab_h:
-    st.subheader("Performance du Portefeuille Global")
     tickers_list = [x['Ticker'] for x in st.session_state.mon_portefeuille]
     if tickers_list:
         h1, h2 = st.tabs(["Dernière Semaine", "Journée"])
         with h1:
-            data = yf.download(tickers_list, period="7d", progress=False
+            data = yf.download(tickers_list, period="7d", progress=False)['Close']
+            if isinstance(data, pd.DataFrame):
+                val_port = pd.Series(0, index=data.index)
+                for act in st.session_state.mon_portefeuille:
+                    if act['Ticker'] in data.columns:
+                        val_port += data[act['Ticker']] * float(act['Qté'])
+                tracer_courbe(pd.DataFrame({'Close': val_port}), "Valeur totale Portefeuille (7j)")
+            elif isinstance(data, pd.Series):
+                val_port = data * float(st.session_state.mon_portefeuille[0]['Qté'])
+                tracer_courbe(pd.DataFrame({'Close': val_port}), "Valeur totale Portefeuille (7j)")
+        with h2:
+            data_d = yf.download(tickers_list, period="1d", interval="5m", progress=False)['Close']
+            if not data_d.empty:
+                if isinstance(data_d, pd.DataFrame):
+                    val_port_d = pd.Series(0, index=data_d.index)
+                    for act in st.session_state.mon_portefeuille:
+                        if act['Ticker'] in data_d.columns:
+                            val_port_d += data_d[act['Ticker']] * float(act['Qté'])
+                    tracer_courbe(pd.DataFrame({'Close': val_port_d}), "Valeur totale Portefeuille (Journée)")
+                elif isinstance(data_d, pd.Series):
+                    val_port_d = data_d * float(st.session_state.mon_portefeuille[0]['Qté'])
+                    tracer_courbe(pd.DataFrame({'Close': val_port_d}), "Valeur totale Portefeuille (Journée)")
