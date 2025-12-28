@@ -130,31 +130,7 @@ with tab_g:
         info = next(x for x in st.session_state.mon_portefeuille if x['Nom'] == choix)
         tracer_graphe(info['Ticker'], info['Date_Achat'], info['Nom'])
 
-# --- 5. SIDEBAR (AJOUT ET RESTAURATION) ---
-with st.sidebar:
-    st.header("🔍 Gestion")
-    with st.form("add_form", clear_on_submit=True):
-        f_n = st.text_input("Nom")
-        f_i = st.text_input("ISIN")
-        f_t = st.text_input("Ticker (ex: AI.PA)")
-        f_p = st.number_input("PRU", min_value=0.0, format="%.2f")
-        f_q = st.number_input("Quantité", min_value=0.0, format="%.2f")
-        f_d = st.date_input("Date d'achat", value=date.today())
-        if st.form_submit_button("Ajouter"):
-            if f_n and f_t:
-                st.session_state.mon_portefeuille.append({
-                    "Nom": f_n, "ISIN": f_i, "Ticker": f_t.upper(),
-                    "PRU": f_p, "Qté": f_q, "Date_Achat": str(f_d)
-                })
-                sauvegarder_vers_github(st.session_state.mon_portefeuille)
-                st.rerun()
 
-    st.divider()
-    st.subheader("⚙️ Maintenance")
-    
-    # --- LE CORRECTIF DE RESTAURATION ---
-    up = st.file_uploader("📤 Restaurer depuis PC", type="csv")
-    if up:
 # --- 5. SIDEBAR (AJOUT ET RESTAURATION) ---
 with st.sidebar:
     st.header("🔍 Gestion")
@@ -204,3 +180,4 @@ with st.sidebar:
     dt_s = datetime.now().strftime("%Y%m%d_%H%M")
     df_dl = pd.DataFrame(st.session_state.mon_portefeuille)
     st.download_button(f"📥 Backup PC ({dt_s})", df_dl.to_csv(index=False), f"portefeuille_{dt_s}.csv")
+
