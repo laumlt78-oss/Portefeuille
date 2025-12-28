@@ -185,3 +185,37 @@ with tab3:
                 if act['Ticker'] in data.columns:
                     val_port += data[act['Ticker']] * float(act['Qté'])
             tracer_courbe(pd.DataFrame({'Close': val_port}), "Valeur totale cumulée")
+# --- 7. SYSTÈME DE NOTIFICATIONS PUSHOVER ---
+
+def envoyer_notification_pushover(titre, message):
+    try:
+        user_key = st.secrets["PUSHOVER_USER_KEY"]
+        api_token = st.secrets["PUSHOVER_API_TOKEN"]
+        url = "https://api.pushover.net/1/messages.json"
+        data = {
+            "token": api_token,
+            "user": user_key,
+            "title": titre,
+            "message": message,
+            "priority": 1 # Priorité haute pour les alertes bourse
+        }
+        requests.post(url, data=data, timeout=10)
+    except:
+        pass # Évite de bloquer l'app si Pushover est indisponible
+
+# Vérification des alertes au chargement
+alertes_detectees = []
+for p in positions_calculees:
+    a = p['act']
+    if p['c_act'] > 0 and p['c_act'] < p['sb']:
+        alertes_detectees.append(f"⚠️ {a['Nom']} est à {p['c_act']:.2f}€ (Seuil: {p['sb']:.2f}€)")
+    elif float(a.get('Seuil_Haut', 0)) > 0 and p['c_act'] > float(a['Seuil_Haut']):
+        alertes_detectees.append(f"🚀 {a['Nom']} a atteint l'objectif: {p['c_act']:.2f}€")
+
+# Envoyer la notification si des alertes existent
+if alertes_detectees:
+    # On utilise le session_state pour n'envoyer qu'une fois par session
+    if 'alerte_envoyee' not in st.session_state:
+        msg = "\n".join(alertes_detectees)
+        envoyer_notification_pushover("Alerte Portefeuille Bourse", msg)
+        st.session_state.alerte_envoyee = True
