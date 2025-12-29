@@ -1,38 +1,83 @@
-name: Surveillance Bourse Automatique
+import yfinance as yf
+import pandas as pd
+import requests
+import os
+import sys
 
-on:
-  schedule:
-    - cron: '0 8 * * 1-5'       # 9h00 Paris : Ouverture
-    - cron: '*/30 8-15 * * 1-5'  # Toutes les 30 min : Check seuils
-    - cron: '40 16 * * 1-5'      # 17h40 Paris : Clôture
-  workflow_dispatch:            # Permet de lancer manuellement
+# Configuration des secrets
+USER_KEY = os.getenv("PUSHOVER_USER_KEY")
+API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
+GH_REPO = os.getenv("GH_REPO")
+MODE = sys.argv[1] if len(sys.argv) > 1 else "check"
 
-jobs:
-  alertes:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+def send_push(title, message, priority=0):
+    print(f"--- Tentative d'envoi Pushover : {title} ---")
+    r = requests.post("https://api.pushover.net/1/messages.json", data={
+        "token": API_TOKEN, "user": USER_KEY, "title": title, "message": message, "priority": priority
+    })
+    print(f"Réponse Pushover : {r.status_code} {r.text}")
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+# 1. Tentative de lecture du fichier
+url = f"https://raw.githubusercontent.com/{GH_REPO}/main/portefeuille_data.csv"
+print(f"Lecture du fichier à l'adresse : {url}")
 
-      - name: Install deps
-        run: pip install yfinance pandas requests
+try:
+    df = pd.read_csv(url)
+    print(f"Fichier chargé avec succès. Nombre de lignes trouvées : {len(df)}")
+except Exception as e:
+    print(f"ERREUR LECTURE FICHIER : {e}")
+    sys.exit()
 
-      - name: Execution
-        env:
-          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
-          PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
-          GH_REPO: ${{ secrets.GH_REPO }}
-        run: |
-          HOUR=$(date +%H)
-          if [ "$HOUR" -eq "08" ]; then
-            python check_alerts.py open
-          elif [ "$HOUR" -eq "16" ]; then
-            python check_alerts.py close
-          else
-            python check_alerts.py check
-          fi
+total_achat = 0
+total_actuel = 0
+report_news = ""
+alertes_detectees = 0
+
+# 2. Analyse des actions
+for _, row in df.iterrows():
+    try:
+        tk = yf.Ticker(row['Ticker'])
+        price = tk.fast_info.last_price
+        if price is None or price == 0:
+            price = tk.history(period="1d")['Close'].iloc[-1]
+            
+        print(f"Analyse {row['Nom']} ({row['Ticker']}) : Prix = {price:.2f}€")
+        
+        pru = float(row['PRU'])
+        qte = float(row['Qté'])
+        total_achat += (pru * qte)
+        total_actuel += (price * qte)
+
+        if MODE == "check":
+            if price <= float(row['Seuil_Bas']):
+                send_push("⚠️ SEUIL BAS ATTEINT", f"{row['Nom']} : {price:.2f}€", 1)
+                alertes_detectees += 1
+            elif float(row.get('Seuil_Haut', 0)) > 0 and price >= float(row['Seuil_Haut']):
+                send_push("🚀 OBJECTIF ATTEINT", f"{row['Nom']} : {price:.2f}€", 1)
+                alertes_detectees += 1
+
+        if MODE == "close":
+            news = tk.news
+            if news:
+                report_news += f"- {row['Nom']} : {news[0]['title']}\n"
+    except Exception as e:
+        print(f"Erreur sur le titre {row.get('Ticker')} : {e}")
+        continue
+
+# 3. Logique d'envoi
+perf_globale = ((total_actuel - total_achat) / total_achat * 100) if total_achat > 0 else 0
+
+if MODE == "open":
+    send_push("🔔 OUVERTURE BOURSE", f"Valeur : {total_actuel:.2f}€\nPerf : {perf_globale:+.2f}%")
+
+elif MODE == "close":
+    msg = f"Valeur Finale : {total_actuel:.2f}€\nPerf : {perf_globale:+.2f}%\n\n📰 NEWS :\n{report_news}"
+    send_push("🏁 CLÔTURE BOURSE", msg)
+
+elif MODE == "check":
+    if alertes_detectees == 0:
+        # C'EST ICI QUE NOUS FORÇONS LA CONFIRMATION
+        print("Aucun seuil touché. Envoi d'une confirmation de bon fonctionnement...")
+        send_push("✅ Robot Actif", f"Analyse terminée. Aucun seuil touché sur vos {len(df)} actions.")
+    else:
+        print(f"Analyse terminée. {alertes_detectees} alerte(s) envoyée(s).")
