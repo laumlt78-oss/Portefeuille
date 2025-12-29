@@ -68,4 +68,4 @@ elif MODE == "close":
     send_push("🏁 CLÔTURE BOURSE", msg)
 
 elif MODE == "check":
-    send_push("TEST FINAL", "Si tu vois ce message, Pushover fonctionne!"
+    send_push("TEST FINAL", "Si tu vois ce message, Pushover fonctionne!")
