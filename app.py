@@ -12,32 +12,21 @@ st.set_page_config(page_title="Portefeuille Expert", layout="wide", initial_side
 try:
     GH_TOKEN = st.secrets["GH_TOKEN"]
     GH_REPO = st.secrets["GH_REPO"]
-    # Optionnel pour l'app, mais nécessaire pour le bouton de test
     P_USER = st.secrets.get("PUSHOVER_USER_KEY")
     P_TOKEN = st.secrets.get("PUSHOVER_API_TOKEN")
 except:
     st.error("Secrets manquants dans Streamlit Cloud.")
     st.stop()
 
-# --- 2. FONCTIONS DE COMMUNICATION ---
+# --- 2. FONCTIONS TECHNIQUES ---
 def envoyer_test_pushover():
-    if not P_USER or not P_TOKEN:
-        st.sidebar.error("Clés Pushover manquantes dans les secrets.")
-        return
     url = "https://api.pushover.net/1/messages.json"
-    data = {
-        "token": P_TOKEN,
-        "user": P_USER,
-        "title": "Test Portefeuille",
-        "message": "✅ La connexion entre Streamlit et votre téléphone fonctionne !",
-        "priority": 0
-    }
+    data = {"token": P_TOKEN, "user": P_USER, "title": "Test Portefeuille", "message": "✅ Connexion OK !", "priority": 0}
     try:
         r = requests.post(url, data=data, timeout=10)
-        if r.status_code == 200: st.sidebar.success("Notification envoyée !")
-        else: st.sidebar.error(f"Erreur Pushover : {r.status_code}")
-    except Exception as e:
-        st.sidebar.error(f"Erreur : {e}")
+        if r.status_code == 200: st.sidebar.success("Envoyé !")
+        else: st.sidebar.error(f"Erreur : {r.status_code}")
+    except: st.sidebar.error("Erreur de connexion")
 
 def charger_depuis_github():
     url = f"https://api.github.com/repos/{GH_REPO}/contents/portefeuille_data.csv"
@@ -60,6 +49,18 @@ def sauvegarder_vers_github(liste):
     if sha: payload["sha"] = sha
     requests.put(url, headers={"Authorization": f"token {GH_TOKEN}"}, json=payload, timeout=10)
 
+def tracer_courbe(df, titre, pru=None, s_b=None):
+    if df is None or df.empty:
+        st.warning("Pas de données disponibles.")
+        return
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', line=dict(color='#00FF00', width=2), name="Prix"))
+    if pru: fig.add_hline(y=float(pru), line_dash="dash", line_color="orange", annotation_text="PRU")
+    if s_b and float(s_b) > 0: fig.add_hline(y=float(s_b), line_color="red", line_width=1, annotation_text="Alerte")
+    fig.update_layout(template="plotly_dark", hovermode="x unified", height=500, margin=dict(l=10, r=10, t=50, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
 # Initialisation
 if 'mon_portefeuille' not in st.session_state:
     st.session_state.mon_portefeuille = charger_depuis_github()
@@ -76,7 +77,8 @@ for i, act in enumerate(st.session_state.mon_portefeuille):
         s_bas = float(sb_val) if pd.notnull(sb_val) and float(sb_val) > 0 else pru * 0.7
         
         tk = yf.Ticker(act['Ticker'])
-        c_act = tk.history(period="1d")['Close'].iloc[-1]
+        hist = tk.history(period="1d")
+        c_act = hist['Close'].iloc[-1] if not hist.empty else 0
         val_titre = c_act * qte
         total_actuel += val_titre
         total_achat += (pru * qte)
@@ -87,31 +89,27 @@ for i, act in enumerate(st.session_state.mon_portefeuille):
         })
     except: continue
 
-# --- 4. INTERFACE ---
+# --- 4. SIDEBAR ---
 with st.sidebar:
-    st.title("💰 Résumé Global")
+    st.title("💰 Résumé")
     if total_achat > 0:
         st.metric("VALEUR TOTALE", f"{total_actuel:.2f} €")
         st.metric("P/L GLOBAL", f"{total_actuel-total_achat:+.2f} €", delta=f"{((total_actuel-total_achat)/total_achat*100):+.2f}%")
     st.divider()
-    
-    # Formulaire d'ajout
     with st.form("add_form", clear_on_submit=True):
-        st.subheader("➕ Ajouter un titre")
+        st.subheader("➕ Ajouter")
         n, i, t = st.text_input("Nom"), st.text_input("ISIN"), st.text_input("Ticker")
         p, q = st.number_input("PRU", min_value=0.0), st.number_input("Qté", min_value=0.0)
         d = st.date_input("Date Achat", value=date.today())
         if st.form_submit_button("Ajouter"):
             if n and t:
-                st.session_state.mon_portefeuille.append({"Nom":n, "ISIN":i, "Ticker":t.upper(), "PRU":p, "Qté":q, "Date_Achat":str(d), "Seuil_Haut":0, "Seuil_Bas":p*0.7})
+                st.session_state.mon_portefeuille.append({"Nom":n, "ISIN":i, "Ticker":t.upper(), "PRU":p, "Qté":q, "Date_Achat":str(d), "Seuil_Bas":p*0.7})
                 sauvegarder_vers_github(st.session_state.mon_portefeuille)
                 st.rerun()
-    
     st.divider()
-    if st.button("🔔 Tester la Notification Pushover"):
-        envoyer_test_pushover()
+    if st.button("🔔 Tester Pushover"): envoyer_test_pushover()
 
-# --- 5. TABS ---
+# --- 5. ONGLETS ---
 t1, t2, t3 = st.tabs(["📊 Portefeuille", "📈 Graphiques", "🌍 Performance"])
 
 with t1:
@@ -121,10 +119,32 @@ with t1:
         header = f"{icone} {a['Nom']} | {p['c_act']:.2f}€ | {p['pv']:+.2f}€"
         with st.expander(header):
             c1, c2, c3 = st.columns(3)
-            c1.write(f"**PRU:** {p['pru']:.2f}€")
-            c2.write(f"**Qté:** {p['qte']}")
+            c1.write(f"**PRU:** {p['pru']:.2f}€\n\n**Achat:** {a.get('Date_Achat')}")
+            c2.write(f"**Qté:** {p['qte']}\n\n**Valeur:** {p['val']:.2f}€")
             c3.write(f"**Alerte:** {p['sb']:.2f}€")
-            if st.button("🗑️", key=f"d_{p['idx']}"):
+            if st.button("🗑️", key=f"del_{p['idx']}"):
                 st.session_state.mon_portefeuille.pop(p['idx'])
                 sauvegarder_vers_github(st.session_state.mon_portefeuille)
                 st.rerun()
+
+with t2:
+    if st.session_state.mon_portefeuille:
+        choix = st.selectbox("Sélectionner une action", [x['Nom'] for x in st.session_state.mon_portefeuille])
+        info = next(x for x in st.session_state.mon_portefeuille if x['Nom'] == choix)
+        # On télécharge depuis la date d'achat
+        start_date = info.get('Date_Achat', str(date.today() - timedelta(days=365)))
+        df_h = yf.download(info['Ticker'], start=start_date, progress=False)
+        tracer_courbe(df_h, info['Nom'], pru=info['PRU'], s_b=info.get('Seuil_Bas'))
+
+with t3:
+    st.subheader("Valeur cumulée du portefeuille (1 mois)")
+    tickers = [x['Ticker'] for x in st.session_state.mon_portefeuille]
+    if tickers:
+        data = yf.download(tickers, period="1mo", progress=False)['Close']
+        if not data.empty:
+            if isinstance(data, pd.Series): data = data.to_frame()
+            val_port = pd.Series(0, index=data.index)
+            for act in st.session_state.mon_portefeuille:
+                if act['Ticker'] in data.columns:
+                    val_port += data[act['Ticker']] * float(act['Qté'])
+            tracer_courbe(pd.DataFrame({'Close': val_port}), "Total Portefeuille")
