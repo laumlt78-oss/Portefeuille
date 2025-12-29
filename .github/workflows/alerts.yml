@@ -1,77 +1,38 @@
-import yfinance as yf
-import pandas as pd
-import requests
-import os
-import sys
+name: Surveillance Bourse Automatique
 
-# Configuration des secrets
-USER_KEY = os.getenv("PUSHOVER_USER_KEY")
-API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
-GH_REPO = os.getenv("GH_REPO")
-MODE = sys.argv[1] if len(sys.argv) > 1 else "check"
+on:
+  schedule:
+    - cron: '0 8 * * 1-5'       # 9h00 Paris (Ouverture)
+    - cron: '*/30 8-15 * * 1-5'  # Toutes les 30 min (Check)
+    - cron: '40 16 * * 1-5'      # 17h40 Paris (Clôture)
+  workflow_dispatch:            # Bouton manuel
 
-def send_push(title, message, priority=0):
-    print(f"--- Envoi Pushover : {title} ---")
-    payload = {
-        "token": API_TOKEN,
-        "user": USER_KEY,
-        "title": title,
-        "message": message,
-        "priority": priority
-    }
-    r = requests.post("https://api.pushover.net/1/messages.json", data=payload)
-    print(f"Réponse : {r.status_code}")
+jobs:
+  alertes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v3
 
-# 1. Lecture du fichier
-url = f"https://raw.githubusercontent.com/{GH_REPO}/main/portefeuille_data.csv"
-print(f"Lien : {url}")
+      - name: Installation Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-try:
-    df = pd.read_csv(url)
-    print(f"Actions trouvees : {len(df)}")
-except Exception as e:
-    print(f"Erreur lecture CSV : {e}")
-    sys.exit()
+      - name: Installation Bibliothèques
+        run: pip install yfinance pandas requests
 
-total_achat = 0
-total_actuel = 0
-report_news = ""
-alertes_envoyees = 0
-
-# 2. Analyse
-for _, row in df.iterrows():
-    try:
-        tk = yf.Ticker(row['Ticker'])
-        price = tk.fast_info.last_price
-        if price is None or price == 0:
-            price = tk.history(period="1d")['Close'].iloc[-1]
-            
-        pru = float(row['PRU'])
-        qte = float(row['Qté'])
-        total_achat += (pru * qte)
-        total_actuel += (price * qte)
-
-        if MODE == "check":
-            if price <= float(row['Seuil_Bas']):
-                send_push("⚠️ ALERTE BASSE", f"{row['Nom']} : {price:.2f}€")
-                alertes_envoyees += 1
-            elif float(row.get('Seuil_Haut', 0)) > 0 and price >= float(row['Seuil_Haut']):
-                send_push("🚀 OBJECTIF", f"{row['Nom']} : {price:.2f}€")
-                alertes_envoyees += 1
-
-        if MODE == "close":
-            n = tk.news
-            if n: report_news += f"- {row['Nom']} : {n[0]['title']}\n"
-    except:
-        continue
-
-# 3. Rapport
-perf = ((total_actuel - total_achat) / total_achat * 100) if total_achat > 0 else 0
-
-if MODE == "open":
-    send_push("🔔 OUVERTURE", f"Valeur : {total_actuel:.2f}€\nPerf : {perf:+.2f}%")
-elif MODE == "close":
-    send_push("🏁 CLOTURE", f"Valeur : {total_actuel:.2f}€\n{report_news}")
-elif MODE == "check":
-    if alertes_envoyees == 0:
-        send_push("✅ Robot OK", f"Analyse finie. Portefeuille : {total_actuel:.2f}€")
+      - name: Execution du Script
+        env:
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+          PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
+          GH_REPO: ${{ secrets.GH_REPO }}
+        run: |
+          HOUR=$(date +%H)
+          if [ "$HOUR" -eq "08" ]; then
+            python check_alerts.py open
+          elif [ "$HOUR" -eq "16" ]; then
+            python check_alerts.py close
+          else
+            python check_alerts.py check
+          fi
