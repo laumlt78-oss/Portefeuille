@@ -1,26 +1,38 @@
-name: Surveillance Bourse Pushover
+name: Surveillance Bourse Automatique
+
 on:
   schedule:
-    # S'exécute toutes les heures de 9h à 18h (heure UTC), du lundi au vendredi
-    - cron: '0 8-17 * * 1-5'
-  workflow_dispatch: # Permet de le lancer manuellement pour tester
+    - cron: '0 8 * * 1-5'       # 9h00 Paris : Ouverture
+    - cron: '*/30 8-15 * * 1-5'  # Toutes les 30 min : Check seuils
+    - cron: '40 16 * * 1-5'      # 17h40 Paris : Clôture
+  workflow_dispatch:            # Permet de lancer manuellement
 
 jobs:
-  check:
+  alertes:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v3
-      - name: Install Python
+
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Install dependencies
+
+      - name: Install deps
         run: pip install yfinance pandas requests
-      - name: Run Alert Script
+
+      - name: Execution
         env:
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
           GH_REPO: ${{ secrets.GH_REPO }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: python check_alerts.py
+        run: |
+          HOUR=$(date +%H)
+          if [ "$HOUR" -eq "08" ]; then
+            python check_alerts.py open
+          elif [ "$HOUR" -eq "16" ]; then
+            python check_alerts.py close
+          else
+            python check_alerts.py check
+          fi
