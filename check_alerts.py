@@ -64,13 +64,16 @@ print(f"DEBUG: Mode actuel = {MODE}")
 
 if MODE == "open":
     send_push("🔔 OUVERTURE", f"Valeur : {total_actuel:.2f}€\nPerf : {perf:+.2f}%")
+
 elif MODE == "close":
-    # On s'assure que même si les news buggent, le message part
+    # Ajout de la performance (%) dans le message de clôture
     msg_news = report_news if report_news else "Pas d'actualités majeures."
-    send_push("🏁 CLOTURE", f"Valeur : {total_actuel:.2f}€\n{msg_news}")
+    msg_final = f"Valeur : {total_actuel:.2f}€\nPerf : {perf:+.2f}%\n\n📰 NEWS :\n{msg_news}"
+    send_push("🏁 CLOTURE", msg_final)
+
 elif MODE == "check":
     # On n'envoie la confirmation de check QUE si c'est lancé manuellement
     if "GITHUB_ACTIONS" in os.environ and os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_push("✅ Robot Actif", f"Analyse finie. Portefeuille : {total_actuel:.2f}€")
+        send_push("✅ Robot Actif", f"Analyse finie. Portefeuille : {total_actuel:.2f}€\nPerf : {perf:+.2f}%")
     else:
         print("Vérification automatique terminée (sans notification).")
