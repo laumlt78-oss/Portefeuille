@@ -84,10 +84,21 @@ elif MODE == "close":
     send_push("🏁 CLOTURE", msg)
 
 elif MODE == "check":
-    # Envoi d'un Flash Info si une news importante vient de sortir
-    if flash_news:
-        send_push("🗞️ FLASH INFO BOURSE", f"Nouvelles publications sur vos titres :\n\n{flash_news}")
+    # On affiche les news dans le journal de bord pour vérifier
+    print(f"News trouvées :\n{all_news}")
     
-    # Test manuel
+    # Si on lance manuellement, on veut TOUT voir pour tester
     if "GITHUB_ACTIONS" in os.environ and os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
-        send_push("✅ Robot Actif", f"Valeur : {total_actuel:.2f}€\nJour : {perf_jour:+.2f}%\nTotal : {perf_totale:+.2f}%")
+        msg_test = (f"Valeur : {total_actuel:.2f}€\n"
+                    f"Jour : {perf_jour:+.2f}%\n"
+                    f"Total : {perf_totale:+.2f}%\n\n"
+                    f"📰 DERNIÈRES INFOS :\n{all_news if all_news else 'Aucune'}")
+        send_push("✅ Test Complet", msg_test)
+    
+    # Si c'est le passage automatique toutes les 30 min :
+    # On peut envoyer un Flash uniquement si une news contient un mot clé important 
+    # ou simplement si vous voulez les news à chaque passage (attention aux répétitions)
+    elif flash_news:
+         # Activer cette ligne seulement si vous voulez un push auto toutes les 30 min quand il y a une news récente
+         # send_push("🗞️ FLASH INFO", flash_news)
+         print("Flash news détecté mais non envoyé pour éviter les doublons (automatique).")
