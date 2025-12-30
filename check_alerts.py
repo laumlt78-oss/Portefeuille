@@ -57,15 +57,20 @@ for _, row in df.iterrows():
     except:
         continue
 
-# 3. Logique d'envoi selon le moment de la journée
-perf_globale = ((total_actuel - total_achat) / total_achat * 100) if total_achat > 0 else 0
+# 3. Envoi
+perf = ((total_actuel - total_achat) / total_achat * 100) if total_achat > 0 else 0
+
+print(f"DEBUG: Mode actuel = {MODE}")
 
 if MODE == "open":
-    send_push("🔔 OUVERTURE BOURSE", f"Valeur : {total_actuel:.2f}€\nPerf Globale : {perf_globale:+.2f}%")
-
+    send_push("🔔 OUVERTURE", f"Valeur : {total_actuel:.2f}€\nPerf : {perf:+.2f}%")
 elif MODE == "close":
-    msg = f"Valeur Finale : {total_actuel:.2f}€\nPerf Journée : {perf_globale:+.2f}%\n\n📰 DERNIÈRES INFOS :\n{report_news}"
-    send_push("🏁 CLÔTURE BOURSE", msg)
-
+    # On s'assure que même si les news buggent, le message part
+    msg_news = report_news if report_news else "Pas d'actualités majeures."
+    send_push("🏁 CLOTURE", f"Valeur : {total_actuel:.2f}€\n{msg_news}")
 elif MODE == "check":
-    send_push("TEST FINAL", "Si tu vois ce message, Pushover fonctionne!")
+    # On n'envoie la confirmation de check QUE si c'est lancé manuellement
+    if "GITHUB_ACTIONS" in os.environ and os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        send_push("✅ Robot Actif", f"Analyse finie. Portefeuille : {total_actuel:.2f}€")
+    else:
+        print("Vérification automatique terminée (sans notification).")
