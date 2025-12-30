@@ -4,7 +4,12 @@ import requests
 import os
 import sys
 from datetime import datetime, timedelta
-
+# Simule une visite sur l'app Streamlit pour l'empêcher de dormir
+STREAMLIT_URL = "https://portefeuille-xppf99tytxydkyaljnmncu.streamlit.app/" # Remplacez par votre URL
+try:
+    requests.get(STREAMLIT_URL)
+except:
+    pass
 # Configuration
 USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
