@@ -29,7 +29,6 @@ total_actuel = 0
 total_veille = 0
 flash_news = ""
 all_news = ""
-alertes = 0
 
 for _, row in df.iterrows():
     try:
@@ -51,20 +50,17 @@ for _, row in df.iterrows():
             news_title = top_news['title']
             all_news += f"- {row['Nom']} : {news_title}\n"
             
-            # Pour le mode Check, on ne garde que les news très récentes (publiées aujourd'hui)
-            # yfinance fournit le timestamp en secondes
+            # Filtre à 24 heures pour le Flash Info
             pub_time = datetime.fromtimestamp(top_news['providerPublishTime'])
-            if pub_time > datetime.now() - timedelta(hours=8):
-                flash_news += f"🔥 {row['Nom']} : {news_title}\n"
+            if pub_time > datetime.now() - timedelta(hours=24):
+                flash_news += f"🗞️ {row['Nom']} : {news_title}\n"
 
-        # Alertes de prix
+        # Alertes de prix (Mode Check)
         if MODE == "check":
             if price <= float(row['Seuil_Bas']):
                 send_push("⚠️ ALERTE BASSE", f"{row['Nom']} : {price:.2f}€")
-                alertes += 1
             elif float(row.get('Seuil_Haut', 0)) > 0 and price >= float(row['Seuil_Haut']):
-                send_push("🚀 OBJECTIF", f"{row['Nom']} : {price:.2f}€")
-                alertes += 1
+                send_push("🚀 OBJECTIF ATTEINT", f"{row['Nom']} : {price:.2f}€")
     except: continue
 
 # 3. Calculs
@@ -81,24 +77,18 @@ elif MODE == "close":
            f"Variation Jour : {perf_jour:+.2f}%\n"
            f"Perf Totale : {perf_totale:+.2f}%\n\n"
            f"📰 RECAP NEWS :\n{msg_news}")
-    send_push("🏁 CLOTURE", msg)
+    send_push("🏁 CLÔTURE", msg)
 
 elif MODE == "check":
-    # On affiche les news dans le journal de bord pour vérifier
-    print(f"News trouvées :\n{all_news}")
+    # --- ENVOI AUTO DES NEWS ---
+    if flash_news:
+        # On envoie les news dès qu'elles sont détectées (automatique)
+        send_push("🗞️ FLASH INFO BOURSE", f"Dernières 24h :\n\n{flash_news}")
     
-    # Si on lance manuellement, on veut TOUT voir pour tester
+    # --- TEST MANUEL (si vous cliquez sur le bouton) ---
     if "GITHUB_ACTIONS" in os.environ and os.getenv("GITHUB_EVENT_NAME") == "workflow_dispatch":
         msg_test = (f"Valeur : {total_actuel:.2f}€\n"
                     f"Jour : {perf_jour:+.2f}%\n"
                     f"Total : {perf_totale:+.2f}%\n\n"
-                    f"📰 DERNIÈRES INFOS :\n{all_news if all_news else 'Aucune'}")
-        send_push("✅ Test Complet", msg_test)
-    
-    # Si c'est le passage automatique toutes les 30 min :
-    # On peut envoyer un Flash uniquement si une news contient un mot clé important 
-    # ou simplement si vous voulez les news à chaque passage (attention aux répétitions)
-    elif flash_news:
-         # Activer cette ligne seulement si vous voulez un push auto toutes les 30 min quand il y a une news récente
-         # send_push("🗞️ FLASH INFO", flash_news)
-         print("Flash news détecté mais non envoyé pour éviter les doublons (automatique).")
+                    f"📰 NEWS (24h) :\n{flash_news if flash_news else 'Aucune'}")
+        send_push("✅ Robot Actif", msg_test)
