@@ -42,7 +42,6 @@ def tracer_courbe(df, titre, pru=None, s_h=None, s_b=None):
     if df is None or df.empty:
         st.warning(f"Pas de données pour {titre}")
         return
-    # Nettoyage MultiIndex yfinance
     if isinstance(df.columns, pd.MultiIndex): 
         df.columns = df.columns.get_level_values(0)
     
@@ -89,7 +88,7 @@ for i, act in enumerate(st.session_state.mon_portefeuille):
         })
     except: continue
 
-# --- 5. SIDEBAR ---
+# --- 5. SIDEBAR (Rétablie avec le Formulaire d'Ajout) ---
 with st.sidebar:
     st.title("💰 Mon Portefeuille")
     if total_achat > 0:
@@ -97,6 +96,28 @@ with st.sidebar:
         diff = total_actuel - total_achat
         pct = (diff / total_achat * 100)
         st.metric("P/L GLOBAL", f"{diff:+.2f} €", delta=f"{pct:+.2f}%")
+    
+    st.divider()
+    with st.form("add_form", clear_on_submit=True):
+        st.subheader("➕ Ajouter une Action")
+        n = st.text_input("Nom de l'entreprise")
+        i_code = st.text_input("Code ISIN")
+        t = st.text_input("Ticker Yahoo (ex: AIR.PA)")
+        p = st.number_input("PRU (€)", min_value=0.0, step=0.01)
+        q = st.number_input("Quantité", min_value=0.0, step=0.1)
+        d = st.date_input("Date d'Achat", value=date.today())
+        
+        if st.form_submit_button("Ajouter au Portefeuille"):
+            if n and t:
+                isin_final = i_code if i_code else t.upper()
+                st.session_state.mon_portefeuille.append({
+                    "Nom": n, "ISIN": isin_final, "Ticker": t.upper(), 
+                    "PRU": p, "Qté": q, "Date_Achat": str(d), 
+                    "Seuil_Haut": p*1.2, "Seuil_Bas": p*0.8
+                })
+                sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
+                st.success(f"{n} ajouté !")
+                st.rerun()
 
 # --- 6. ONGLETS ---
 t1, t2, t3, t4, t5 = st.tabs(["📊 Portefeuille", "📈 Graphiques", "🌍 Performance", "🔍 Watchlist", "💰 Valorisation"])
@@ -143,59 +164,72 @@ with t2:
         choix = c_a.selectbox("Action", [x['Nom'] for x in st.session_state.mon_portefeuille])
         per = c_p.selectbox("Période", ["Aujourd'hui", "1 mois", "6 mois", "1 an", "5 ans"])
         info = next(x for x in st.session_state.mon_portefeuille if x['Nom'] == choix)
-        
         map_p = {"Aujourd'hui": ("1d", "1m"), "1 mois": ("1mo", "60m"), "6 mois": ("6mo", "1d"), "1 an": ("1y", "1d"), "5 ans": ("5y", "1wk")}
         d_h = yf.download(info['Ticker'], period=map_p[per][0], interval=map_p[per][1], progress=False)
         tracer_courbe(d_h, f"{choix} ({per})", pru=info['PRU'], s_h=info.get('Seuil_Haut'), s_b=info.get('Seuil_Bas'))
 
 with t3:
-    st.subheader("Évolution de la Valeur Totale (1 mois)")
+    st.subheader("📈 Évolution Portefeuille (1 mois)")
     tickers = [x['Ticker'] for x in st.session_state.mon_portefeuille]
     if tickers:
         data = yf.download(tickers, period="1mo", interval="1d", progress=False)['Close']
         if not data.empty:
-            df_perf = pd.DataFrame(index=data.index)
             v_tot = pd.Series(0.0, index=data.index)
             for a in st.session_state.mon_portefeuille:
                 t = a['Ticker']
                 if t in data.columns: v_tot += data[t] * float(a['Qté'])
                 elif len(tickers) == 1: v_tot += data * float(a['Qté'])
-            df_perf['Close'] = v_tot
-            tracer_courbe(df_perf, "Valeur Portefeuille (€)")
+            tracer_courbe(pd.DataFrame({'Close': v_tot}), "Valeur Portefeuille (€)")
 
 with t4:
     st.header("🔍 Watchlist")
-    if st.button("➕ Ajouter une surveillance"): st.session_state.w_form = not st.session_state.get('w_form', False)
+    if st.button("➕ Ajouter une surveillance"): 
+        st.session_state.w_form = not st.session_state.get('w_form', False)
     if st.session_state.get('w_form', False):
         with st.form("wf"):
             c1, c2, c3, c4 = st.columns(4)
             wn = c1.text_input("Nom")
-            wi = c2.text_input("ISIN")
+            wi = c2.text_input("ISIN (Vide = Ticker)")
             wt = c3.text_input("Ticker")
-            ws = c4.number_input("Seuil", min_value=0.0)
-            if st.form_submit_button("Ajouter"):
-                st.session_state.ma_watchlist.append({"Nom":wn, "ISIN":wi if wi else wt.upper(), "Ticker":wt.upper(), "Seuil_Alerte":ws})
+            ws = c4.number_input("Seuil d'Alerte", min_value=0.0)
+            if st.form_submit_button("Lancer la surveillance"):
+                isin_w = wi if wi else wt.upper()
+                st.session_state.ma_watchlist.append({"Nom":wn, "ISIN":isin_w, "Ticker":wt.upper(), "Seuil_Alerte":ws})
                 sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
                 st.rerun()
+    
     for j, w in enumerate(st.session_state.ma_watchlist):
         cw = prices.get(w['Ticker'], 0.0)
-        st.write(f"**{w['Nom']}** | Prix: {cw:.2f}€ | Seuil: {w['Seuil_Alerte']:.2f}€")
+        col1, col2, col3, col4 = st.columns([3,2,2,1])
+        col1.write(f"**{w['Nom']}** ({w['Ticker']})")
+        col2.write(f"Cours: {cw:.2f}€")
+        col3.write(f"Alerte: {w['Seuil_Alerte']:.2f}€")
+        if col4.button("🗑️", key=f"delw_{j}"):
+            st.session_state.ma_watchlist.pop(j)
+            sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+            st.rerun()
 
 with t5:
     st.header("💰 Valorisation & Dividendes")
+    with st.expander("➕ Déclarer un dividende"):
+        with st.form("div_f"):
+            dt = st.selectbox("Action", [x['Ticker'] for x in st.session_state.mon_portefeuille])
+            dm = st.number_input("Montant Net (€)", min_value=0.01)
+            if st.form_submit_button("Enregistrer"):
+                st.session_state.mes_dividendes.append({"Ticker":dt, "Date":str(date.today()), "Montant":dm})
+                sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
+                st.rerun()
+
     if st.session_state.mon_portefeuille:
         df_d = pd.DataFrame(st.session_state.mes_dividendes)
         bilan = []
         g_i, g_a, g_d = 0.0, 0.0, 0.0
         for a in st.session_state.mon_portefeuille:
-            p_a = prices.get(a['Ticker'], 0.0)
-            q = float(a['Qté'])
-            i = float(a['PRU']) * q
-            v = p_a * q
+            p_a = prices.get(a['Ticker'], 0.0); q = float(a['Qté'])
+            i = float(a['PRU']) * q; v = p_a * q
             d = df_d[df_d['Ticker'] == a['Ticker']]['Montant'].sum() if not df_d.empty else 0.0
             g_i += i; g_a += v; g_d += d
             bilan.append({"Action": a['Nom'], "Investi": round(i,2), "P/L Bourse": round(v-i,2), "Dividendes": round(d,2), "Rendement Réel": f"{((v+d-i)/i*100):+.2f}%"})
         
-        bilan.append({"Action": "---", "Investi": 0, "P/L Bourse": 0, "Dividendes": 0, "Rendement Réel": "---"})
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
