@@ -215,29 +215,73 @@ with t4:
     st.header("🔍 Watchlist")
     if st.button("➕ Ajouter une surveillance"): 
         st.session_state.w_form = not st.session_state.get('w_form', False)
+    
     if st.session_state.get('w_form', False):
         with st.form("wf"):
             c1, c2, c3, c4 = st.columns(4)
-            wn = c1.text_input("Nom")
+            wn = c1.text_input("Nom de la valeur")
             wi = c2.text_input("ISIN (Vide = Ticker)")
-            wt = c3.text_input("Ticker")
-            ws = c4.number_input("Seuil d'Alerte", min_value=0.0)
+            wt = c3.text_input("Ticker Yahoo")
+            ws = c4.number_input("Seuil d'Alerte (€)", min_value=0.0)
             if st.form_submit_button("Lancer la surveillance"):
                 isin_w = wi if wi else wt.upper()
-                st.session_state.ma_watchlist.append({"Nom":wn, "ISIN":isin_w, "Ticker":wt.upper(), "Seuil_Alerte":ws})
+                st.session_state.ma_watchlist.append({
+                    "Nom": wn, "ISIN": isin_w, "Ticker": wt.upper(), "Seuil_Alerte": ws
+                })
                 sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                st.session_state.w_form = False
                 st.rerun()
     
-    for j, w in enumerate(st.session_state.ma_watchlist):
-        cw = prices.get(w['Ticker'], 0.0)
-        col1, col2, col3, col4 = st.columns([3,2,2,1])
-        col1.write(f"**{w['Nom']}** ({w['Ticker']})")
-        col2.write(f"Cours: {cw:.2f}€")
-        col3.write(f"Alerte: {w['Seuil_Alerte']:.2f}€")
-        if col4.button("🗑️", key=f"delw_{j}"):
-            st.session_state.ma_watchlist.pop(j)
-            sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-            st.rerun()
+    st.divider()
+    
+    if not st.session_state.ma_watchlist:
+        st.info("Aucune valeur en surveillance.")
+    else:
+        for j, w in enumerate(st.session_state.ma_watchlist):
+            cw = prices.get(w['Ticker'], 0.0)
+            col1, col2, col3, col_btn = st.columns([3, 2, 2, 2])
+            
+            col1.write(f"**{w['Nom']}** ({w['Ticker']})")
+            col2.write(f"Cours: {cw:.2f}€")
+            col3.write(f"Cible: {w['Seuil_Alerte']:.2f}€")
+            
+            # Boutons d'action
+            c_buy, c_del = col_btn.columns(2)
+            if c_buy.button("📥", key=f"buy_w_{j}", help="Passer en portefeuille"):
+                st.session_state[f"buying_{j}"] = True
+            if c_del.button("🗑️", key=f"delw_{j}"):
+                st.session_state.ma_watchlist.pop(j)
+                sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                st.rerun()
+
+            # --- FORMULAIRE DE PASSAGE EN PORTEFEUILLE ---
+            if st.session_state.get(f"buying_{j}", False):
+                with st.form(f"form_buy_trans_{j}"):
+                    st.subheader(f"Transfert de {w['Nom']} vers Portefeuille")
+                    fb_q = st.number_input("Quantité achetée", min_value=0.1, step=0.1)
+                    fb_p = st.number_input("Prix d'achat (PRU)", value=cw)
+                    fb_sh = st.number_input("Objectif (Seuil Haut)", value=fb_p*1.2)
+                    fb_sb = st.number_input("Alerte (Seuil Bas)", value=fb_p*0.8)
+                    
+                    c_f1, c_f2 = st.columns(2)
+                    if c_f1.form_submit_button("✅ Confirmer l'achat"):
+                        # 1. Ajouter au portefeuille
+                        st.session_state.mon_portefeuille.append({
+                            "Nom": w['Nom'], "ISIN": w['ISIN'], "Ticker": w['Ticker'],
+                            "PRU": fb_p, "Qté": fb_q, "Date_Achat": str(date.today()),
+                            "Seuil_Haut": fb_sh, "Seuil_Bas": fb_sb
+                        })
+                        # 2. Retirer de la watchlist
+                        st.session_state.ma_watchlist.pop(j)
+                        # 3. Sauvegarder les deux
+                        sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
+                        sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                        st.session_state[f"buying_{j}"] = False
+                        st.success("Transfert réussi !")
+                        st.rerun()
+                    if c_f2.form_submit_button("Annuler"):
+                        st.session_state[f"buying_{j}"] = False
+                        st.rerun()
 
 with t5:
     st.header("💰 Valorisation & Dividendes")
@@ -263,4 +307,5 @@ with t5:
         
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
+
 
