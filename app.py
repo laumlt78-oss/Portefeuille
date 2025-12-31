@@ -233,6 +233,7 @@ with t4:
 # --- ONGLET 5 : VALORISATION ---
 with t5:
     st.header("💰 Valorisation & Dividendes")
+    
     with st.expander("➕ Déclarer un dividende"):
         with st.form("div_form"):
             dt = st.selectbox("Action concernée", [x['Ticker'] for x in st.session_state.mon_portefeuille])
@@ -247,18 +248,55 @@ with t5:
     if st.session_state.mon_portefeuille:
         df_div = pd.DataFrame(st.session_state.mes_dividendes)
         bilan_data = []
+        
+        # Initialisation des totaux globaux
+        g_investi = 0
+        g_actuel = 0
+        g_div = 0
+
         for a in st.session_state.mon_portefeuille:
             p_act = prices.get(a['Ticker'], 0.0)
             qte = float(a.get('Qté', 0))
             total_pru = float(a.get('PRU', 0)) * qte
             val_act = p_act * qte
             sum_div = df_div[df_div['Ticker'] == a['Ticker']]['Montant'].sum() if not df_div.empty else 0.0
-            perf_reelle = ((val_act + sum_div - total_pru) / total_pru * 100) if total_pru > 0 else 0
+            
+            # Mise à jour des globaux
+            g_investi += total_pru
+            g_actuel += val_act
+            g_div += sum_div
+            
+            # Calculs par ligne
+            pv_bourse = val_act - total_pru
+            perf_bourse = (pv_bourse / total_pru * 100) if total_pru > 0 else 0
+            
+            pv_reelle = (val_act + sum_div) - total_pru
+            perf_reelle = (pv_reelle / total_pru * 100) if total_pru > 0 else 0
             
             bilan_data.append({
                 "Action": a['Nom'],
-                "P/L Latente": f"{(val_act - total_pru):.2f}€",
+                "Investi": f"{total_pru:.2f}€",
+                "+/- Value Bourse": f"{pv_bourse:+.2f}€ ({perf_bourse:+.2f}%)",
                 "Dividendes": f"{sum_div:.2f}€",
-                "Rendement Réel": f"{perf_reelle:+.2f}%"
+                "Performance Réelle (+Div)": f"{pv_reelle:+.2f}€ ({perf_reelle:+.2f}%)"
             })
+        
+        # --- AFFICHAGE DES RÉCAPITULATIFS EN HAUT ---
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Total Investi", f"{g_investi:.2f} €")
+        with c2:
+            pv_g_bourse = g_actuel - g_investi
+            pct_g_bourse = (pv_g_bourse / g_investi * 100) if g_investi > 0 else 0
+            st.metric("Bilan Boursier", f"{g_actuel:.2f} €", delta=f"{pv_g_bourse:+.2f}€ ({pct_g_bourse:+.2f}%)")
+        with c3:
+            richesse_g = g_actuel + g_div
+            pv_g_reelle = richesse_g - g_investi
+            pct_g_reelle = (pv_g_reelle / g_investi * 100) if g_investi > 0 else 0
+            st.metric("Richesse Totale", f"{richesse_g:.2f} €", delta=f"{pv_g_reelle:+.2f}€ ({pct_g_reelle:+.2f}%)", delta_color="normal")
+
+        st.divider()
+        st.subheader("Détail par valeur")
         st.table(pd.DataFrame(bilan_data))
+    else:
+        st.info("Le portefeuille est vide.")
