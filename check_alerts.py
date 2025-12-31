@@ -5,15 +5,22 @@ import os
 import sys
 from datetime import datetime, timedelta
 
-# --- AJOUTER CETTE LIGNE ICI ---
-STREAMLIT_APP_URL = "https://portefeuille-xppf99tytxydkyaljnmncu.streamlit.app/" 
+# --- SYSTÈME ANTI-SOMMEIL ---
+def wake_up_streamlit():
+    url = "https://portefeuille-xppf99tytxydkyaljnmncu.streamlit.app/"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    try:
+        # On simule une vraie visite de navigateur
+        r = requests.get(url, headers=headers, timeout=20)
+        print(f"Réveil Streamlit envoyé. Status : {r.status_code}")
+    except Exception as e:
+        print(f"Erreur réveil : {e}")
 
-# Fonction de réveil
-try:
-    requests.get(STREAMLIT_APP_URL, timeout=10)
-    print("Réveil Streamlit : OK")
-except:
-    print("Réveil Streamlit : Échec (sans gravité)")
+# Lancer le réveil immédiatement
+wake_up_streamlit()
+# ----------------------------
 
 # Configuration
 USER_KEY = os.getenv("PUSHOVER_USER_KEY")
