@@ -4,12 +4,17 @@ import requests
 import os
 import sys
 from datetime import datetime, timedelta
-# Simule une visite sur l'app Streamlit pour l'empêcher de dormir
-STREAMLIT_URL = "https://portefeuille-xppf99tytxydkyaljnmncu.streamlit.app/" # Remplacez par votre URL
+
+# --- AJOUTER CETTE LIGNE ICI ---
+STREAMLIT_APP_URL = "https://portefeuille-xppf99tytxydkyaljnmncu.streamlit.app/" 
+
+# Fonction de réveil
 try:
-    requests.get(STREAMLIT_URL)
+    requests.get(STREAMLIT_APP_URL, timeout=10)
+    print("Réveil Streamlit : OK")
 except:
-    pass
+    print("Réveil Streamlit : Échec (sans gravité)")
+
 # Configuration
 USER_KEY = os.getenv("PUSHOVER_USER_KEY")
 API_TOKEN = os.getenv("PUSHOVER_API_TOKEN")
