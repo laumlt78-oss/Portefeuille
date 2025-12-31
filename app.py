@@ -183,52 +183,81 @@ with t3:
 # --- ONGLET 4 : VALEURS À SURVEILLER ---
 with t4:
     st.header("🔍 Valeurs à surveiller")
-    if st.button("➕ Nouvelle valeur à surveiller"):
-        st.session_state.show_w_form = not st.session_state.get('show_w_form', False)
+    
+    # On utilise une clé unique pour gérer l'affichage du formulaire
+    if "show_w_form" not in st.session_state:
+        st.session_state.show_w_form = False
 
-    if st.session_state.get('show_w_form', False):
-        with st.form("watchlist_form"):
-            c1, c2, c3 = st.columns(3)
-            wn = c1.text_input("Nom de la valeur")
-            wi = c2.text_input("Code ISIN")
-            wt = c3.text_input("Ticker (Yahoo)")
-            ws = st.number_input("Seuil d'alerte (€)", min_value=0.0)
-            if st.form_submit_button("Créer la surveillance"):
-                if wn and wt:
-                    st.session_state.ma_watchlist.append({"Nom": wn, "ISIN": wi, "Ticker": wt.upper(), "Seuil_Alerte": ws})
+    if st.button("➕ Nouvelle valeur à surveiller"):
+        st.session_state.show_w_form = not st.session_state.show_w_form
+
+    if st.session_state.show_w_form:
+        # On retire le 'with st.form' qui pose parfois problème avec les redirections GitHub
+        # et on utilise des composants directs pour plus de fiabilité
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        wn = c1.text_input("Nom de la valeur (ex: Tesla)")
+        wi = c2.text_input("Code ISIN (ex: US88160R1014)")
+        wt = c3.text_input("Ticker Yahoo (ex: TSLA)")
+        ws = st.number_input("Seuil d'alerte (€)", min_value=0.0, step=0.1)
+        
+        if st.button("✅ Valider et lancer la surveillance"):
+            if wn and wt:
+                with st.spinner("Synchronisation avec GitHub..."):
+                    nouvelle_valeur = {
+                        "Nom": wn, 
+                        "ISIN": wi, 
+                        "Ticker": wt.upper(), 
+                        "Seuil_Alerte": float(ws)
+                    }
+                    st.session_state.ma_watchlist.append(nouvelle_valeur)
                     sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
                     st.session_state.show_w_form = False
+                    st.success(f"La surveillance pour {wn} a été créée !")
                     st.rerun()
+            else:
+                st.error("Veuillez remplir au moins le Nom et le Ticker.")
+        st.markdown("---")
 
-    st.divider()
-    for j, w in enumerate(st.session_state.ma_watchlist):
-        cur_w = prices.get(w['Ticker'], 0.0)
-        col1, col2, col3, col4, col5 = st.columns([2,1,1,1,2])
-        col1.write(f"**{w['Nom']}** ({w['ISIN']})")
-        col2.write(f"Cours: {cur_w:.2f}€")
-        col3.write(f"Seuil: {w.get('Seuil_Alerte', 0):.2f}€")
-        
-        if col5.button("📥 Acheter / Insérer", key=f"ins_{j}"):
-            st.session_state[f"pop_ins_{j}"] = True
+    # Affichage de la liste
+    if not st.session_state.ma_watchlist:
+        st.info("Aucune valeur en surveillance pour le moment.")
+    else:
+        for j, w in enumerate(st.session_state.ma_watchlist):
+            cur_w = prices.get(w['Ticker'], 0.0)
+            col1, col2, col3, col4, col5 = st.columns([2,1,1,1,1])
+            col1.write(f"**{w['Nom']}** ({w['ISIN']})")
+            col2.write(f"Cours: {cur_w:.2f}€")
+            col3.write(f"Seuil: {w.get('Seuil_Alerte', 0):.2f}€")
             
-        if st.session_state.get(f"pop_ins_{j}", False):
-            with st.form(f"f_ins_{j}"):
-                st.info(f"Ajout de {w['Nom']} au portefeuille")
-                fi_q = st.number_input("Nombre d'actions", min_value=1.0)
-                fi_p = st.number_input("PRU (€)", value=cur_w)
-                fi_sh = st.number_input("Seuil Haut", value=fi_p*1.2)
-                fi_sb = st.number_input("Seuil Bas", value=fi_p*0.8)
-                if st.form_submit_button("Confirmer l'achat"):
-                    st.session_state.mon_portefeuille.append({
-                        "Nom": w['Nom'], "ISIN": w['ISIN'], "Ticker": w['Ticker'], 
-                        "PRU": fi_p, "Qté": fi_q, "Date_Achat": str(date.today()),
-                        "Seuil_Haut": fi_sh, "Seuil_Bas": fi_sb
-                    })
-                    st.session_state.ma_watchlist.pop(j)
-                    sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
-                    sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-                    st.session_state[f"pop_ins_{j}"] = False
-                    st.rerun()
+            # Bouton de suppression simple
+            if col4.button("🗑️", key=f"del_w_{j}"):
+                st.session_state.ma_watchlist.pop(j)
+                sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                st.rerun()
+                
+            # Bouton d'achat
+            if col5.button("📥 Acheter", key=f"ins_{j}"):
+                st.session_state[f"pop_ins_{j}"] = True
+                
+            if st.session_state.get(f"pop_ins_{j}", False):
+                with st.form(f"f_ins_{j}"):
+                    st.info(f"Ajout de {w['Nom']} au portefeuille")
+                    fi_q = st.number_input("Nombre d'actions", min_value=0.1)
+                    fi_p = st.number_input("PRU (€)", value=cur_w)
+                    fi_sh = st.number_input("Seuil Haut", value=fi_p*1.2)
+                    fi_sb = st.number_input("Seuil Bas", value=fi_p*0.8)
+                    if st.form_submit_button("Confirmer l'achat"):
+                        st.session_state.mon_portefeuille.append({
+                            "Nom": w['Nom'], "ISIN": w['ISIN'], "Ticker": w['Ticker'], 
+                            "PRU": fi_p, "Qté": fi_q, "Date_Achat": str(date.today()),
+                            "Seuil_Haut": fi_sh, "Seuil_Bas": fi_sb
+                        })
+                        st.session_state.ma_watchlist.pop(j)
+                        sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
+                        sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                        st.session_state[f"pop_ins_{j}"] = False
+                        st.rerun()
 
 # --- ONGLET 5 : VALORISATION ---
 with t5:
@@ -300,3 +329,4 @@ with t5:
         st.table(pd.DataFrame(bilan_data))
     else:
         st.info("Le portefeuille est vide.")
+
