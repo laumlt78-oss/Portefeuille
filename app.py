@@ -127,25 +127,28 @@ with t1:
         a = p['act']
         icone = "🟢" if p['pv'] >= 0 else "🔴"
         
-        # Sécurité pour éviter le NaN à l'affichage
-        s_haut = float(a.get('Seuil_Haut', 0)) if pd.notnull(a.get('Seuil_Haut')) else 0.0
-        s_bas = float(a.get('Seuil_Bas', 0)) if pd.notnull(a.get('Seuil_Bas')) else 0.0
+        # Sécurité : Si Seuil Bas est manquant, on le calcule (PRU - 30%)
+        pru_val = float(a.get('PRU', 0))
+        if pd.isna(a.get('Seuil_Bas')) or float(a.get('Seuil_Bas', 0)) == 0:
+            s_bas_auto = pru_val * 0.70
+        else:
+            s_bas_auto = float(a['Seuil_Bas'])
+
+        s_haut = float(a.get('Seuil_Haut', 0)) if pd.notnull(a.get('Seuil_Haut')) else pru_val * 1.20
         
         with st.expander(f"{icone} {a['Nom']} | {p['c_act']:.2f}€ | {p['pv']:+.2f}€"):
             c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
             with c1:
                 st.write(f"**ISIN:** {a.get('ISIN')}")
                 st.write(f"**Ticker:** {a.get('Ticker')}")
-                st.write(f"**PRU Unitaire:** {p['pru']:.2f}€")
+                st.write(f"**PRU Unitaire:** {pru_val:.2f}€")
             with c2:
                 st.write(f"**Qté:** {p['qte']}")
-                st.write(f"**PRU Total:** {(p['pru']*p['qte']):.2f}€")
                 st.write(f"**Valeur Actuelle:** {p['val']:.2f}€")
             with c3:
-                # Affichage formaté pour éviter le NaN
-                st.write(f"**Seuil Haut:** {s_haut:.2f}€")
-                st.write(f"**Seuil Bas:** {s_bas:.2f}€")
-                st.write(f"**Date Achat:** {a.get('Date_Achat')}")
+                st.write(f"**Objectif (Haut):** {s_haut:.2f}€")
+                st.write(f"**Alerte (Bas):** {s_bas_auto:.2f}€")
+                st.caption(f"Soit {( (s_bas_auto/pru_val - 1)*100 if pru_val > 0 else 0):.0f}% du PRU")
             
             with c4:
                 col_ed, col_sel, col_del = st.columns(3)
@@ -158,14 +161,28 @@ with t1:
                     sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
                     st.rerun()
 
-            # --- FORMULAIRE D'ÉDITION CORRIGÉ ---
+            # --- FORMULAIRE D'ÉDITION AVEC CALCUL DE PERCENTAGE ---
             if st.session_state.get(f"edit_{p['idx']}", False):
                 with st.form(f"f_edit_{p['idx']}"):
-                    st.subheader(f"Modifier {a['Nom']}")
-                    n_pru = st.number_input("Nouveau PRU", value=float(p['pru']))
-                    n_qte = st.number_input("Nouvelle Qté", value=float(p['qte']))
-                    n_sh = st.number_input("Seuil Haut (Objectif)", value=s_haut)
-                    n_sb = st.number_input("Seuil Bas (Alerte)", value=s_bas)
+                    st.subheader(f"Réglages de {a['Nom']}")
+                    
+                    col_p1, col_p2 = st.columns(2)
+                    n_pru = col_p1.number_input("Nouveau PRU", value=pru_val)
+                    n_qte = col_p2.number_input("Nouvelle Qté", value=float(p['qte']))
+                    
+                    st.divider()
+                    st.write("**Gestion des alertes**")
+                    n_sh = st.number_input("Seuil Haut (Objectif €)", value=s_haut)
+                    
+                    # Choix entre montant direct ou pourcentage
+                    mode_seuil = st.radio("Définir le seuil bas par :", ["Montant fixe (€)", "Pourcentage du PRU (%)"], horizontal=True)
+                    
+                    if mode_seuil == "Montant fixe (€)":
+                        n_sb = st.number_input("Seuil Bas (€)", value=s_bas_auto)
+                    else:
+                        pct = st.slider("Pourcentage de protection (sous le PRU)", 5, 50, 30)
+                        n_sb = n_pru * (1 - pct/100)
+                        st.info(f"Le nouveau seuil sera de {n_sb:.2f}€ (-{pct}%)")
                     
                     if st.form_submit_button("Valider les modifications"):
                         st.session_state.mon_portefeuille[p['idx']].update({
@@ -176,7 +193,6 @@ with t1:
                         })
                         sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
                         st.session_state[f"edit_{p['idx']}"] = False
-                        st.success("Données mises à jour !")
                         st.rerun()
 
 with t2:
@@ -339,6 +355,7 @@ with t5:
         
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
+
 
 
 
