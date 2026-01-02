@@ -69,15 +69,24 @@ if not df_p.empty:
                 flash_news += f"🗞️ {row['Nom']} : {news[0]['title']}\n"
         except: continue
 
-# B. Analyse Watchlist (Mode Check uniquement)
+# B. Analyse Watchlist (Mode Check uniquement) ---
 if MODE == "check" and not df_w.empty:
     for _, row in df_w.iterrows():
         try:
             tk = yf.Ticker(row['Ticker'])
+            # On récupère le prix le plus récent
             p_w = tk.fast_info.last_price
-            if p_w <= float(row['Seuil_Alerte']):
-                watchlist_alerts += f"🎯 {row['Nom']} a touché son seuil : {p_w:.2f}€\n"
-        except: continue
+            if p_w is None or p_w == 0:
+                p_w = tk.history(period="1d")['Close'].iloc[-1]
+            
+            seuil_fixe = float(row['Seuil_Alerte'])
+            
+            # L'alerte se déclenche uniquement si on est au-dessous ou égal au seuil
+            if p_w <= seuil_fixe:
+                watchlist_alerts += f"🎯 {row['Nom']} : {p_w:.2f}€ (Votre seuil : {seuil_fixe:.2f}€)\n"
+        except Exception as e: 
+            continue
+
 
 # C. Calcul Dividendes
 total_div = df_d['Montant'].sum() if not df_d.empty else 0
