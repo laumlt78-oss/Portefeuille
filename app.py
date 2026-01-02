@@ -126,6 +126,11 @@ with t1:
     for p in positions_calculees:
         a = p['act']
         icone = "🟢" if p['pv'] >= 0 else "🔴"
+        
+        # Sécurité pour éviter le NaN à l'affichage
+        s_haut = float(a.get('Seuil_Haut', 0)) if pd.notnull(a.get('Seuil_Haut')) else 0.0
+        s_bas = float(a.get('Seuil_Bas', 0)) if pd.notnull(a.get('Seuil_Bas')) else 0.0
+        
         with st.expander(f"{icone} {a['Nom']} | {p['c_act']:.2f}€ | {p['pv']:+.2f}€"):
             c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
             with c1:
@@ -137,55 +142,41 @@ with t1:
                 st.write(f"**PRU Total:** {(p['pru']*p['qte']):.2f}€")
                 st.write(f"**Valeur Actuelle:** {p['val']:.2f}€")
             with c3:
-                st.write(f"**Seuil Haut:** {p['sh']:.2f}€")
-                st.write(f"**Seuil Bas:** {p['sb']:.2f}€")
+                # Affichage formaté pour éviter le NaN
+                st.write(f"**Seuil Haut:** {s_haut:.2f}€")
+                st.write(f"**Seuil Bas:** {s_bas:.2f}€")
                 st.write(f"**Date Achat:** {a.get('Date_Achat')}")
             
             with c4:
                 col_ed, col_sel, col_del = st.columns(3)
-                if col_ed.button("✏️", key=f"ed_{p['idx']}", help="Modifier"): 
+                if col_ed.button("✏️", key=f"ed_{p['idx']}"): 
                     st.session_state[f"edit_{p['idx']}"] = True
-                if col_sel.button("🛒", key=f"sell_{p['idx']}", help="Vendre la position"): 
+                if col_sel.button("🛒", key=f"sell_{p['idx']}"): 
                     st.session_state[f"sell_mode_{p['idx']}"] = True
-                if col_del.button("🗑️", key=f"del_{p['idx']}", help="Supprimer sans calcul"):
+                if col_del.button("🗑️", key=f"del_{p['idx']}"):
                     st.session_state.mon_portefeuille.pop(p['idx'])
                     sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
                     st.rerun()
 
-            # --- MODE ÉDITION ---
+            # --- FORMULAIRE D'ÉDITION CORRIGÉ ---
             if st.session_state.get(f"edit_{p['idx']}", False):
-                with st.form(f"form_ed_{p['idx']}"):
-                    n_pru = st.number_input("Nouveau PRU", value=p['pru'])
-                    n_qte = st.number_input("Nouvelle Qté", value=p['qte'])
-                    n_sh = st.number_input("Seuil Haut", value=p['sh'])
-                    n_sb = st.number_input("Seuil Bas", value=p['sb'])
-                    if st.form_submit_button("Sauvegarder"):
-                        st.session_state.mon_portefeuille[p['idx']].update({"PRU":n_pru, "Qté":n_qte, "Seuil_Haut":n_sh, "Seuil_Bas":n_sb})
+                with st.form(f"f_edit_{p['idx']}"):
+                    st.subheader(f"Modifier {a['Nom']}")
+                    n_pru = st.number_input("Nouveau PRU", value=float(p['pru']))
+                    n_qte = st.number_input("Nouvelle Qté", value=float(p['qte']))
+                    n_sh = st.number_input("Seuil Haut (Objectif)", value=s_haut)
+                    n_sb = st.number_input("Seuil Bas (Alerte)", value=s_bas)
+                    
+                    if st.form_submit_button("Valider les modifications"):
+                        st.session_state.mon_portefeuille[p['idx']].update({
+                            "PRU": n_pru, 
+                            "Qté": n_qte, 
+                            "Seuil_Haut": n_sh, 
+                            "Seuil_Bas": n_sb
+                        })
                         sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
                         st.session_state[f"edit_{p['idx']}"] = False
-                        st.rerun()
-
-            # --- MODE VENTE ---
-            if st.session_state.get(f"sell_mode_{p['idx']}", False):
-                with st.form(f"form_sell_{p['idx']}"):
-                    st.info(f"Vendre {a['Nom']}")
-                    p_vente = st.number_input("Prix de vente unitaire (€)", value=p['c_act'])
-                    frais = st.number_input("Frais de transaction (€)", min_value=0.0, value=0.0)
-                    total_v = (p_vente * p['qte']) - frais
-                    plus_value = total_v - (p['pru'] * p['qte'])
-                    
-                    st.write(f"**Total net :** {total_v:.2f}€")
-                    st.write(f"**Plus-value finale :** {plus_value:+.2f}€")
-                    
-                    if st.form_submit_button("Confirmer la vente totale"):
-                        # Ici on pourrait enregistrer dans un historique, mais pour l'instant on sort la ligne
-                        st.session_state.mon_portefeuille.pop(p['idx'])
-                        sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
-                        st.session_state[f"sell_mode_{p['idx']}"] = False
-                        st.success("Position soldée !")
-                        st.rerun()
-                    if st.form_submit_button("Annuler"):
-                        st.session_state[f"sell_mode_{p['idx']}"] = False
+                        st.success("Données mises à jour !")
                         st.rerun()
 
 with t2:
@@ -348,6 +339,7 @@ with t5:
         
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
+
 
 
 
