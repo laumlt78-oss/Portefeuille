@@ -300,33 +300,48 @@ with t4:
                             st.rerun()
 
                 # --- 4. FORMULAIRE D'ACHAT (S'affiche si on clique sur 📥) ---
-                if st.session_state.get('form_actif') == ("buying", j):
-                    with st.form(f"f_trans_{j}"):
-                        st.subheader(f"📥 Acheter {w['Nom']}")
-                        c_f1, c_f2 = st.columns(2)
-                        fb_q = c_f1.number_input("Quantité", min_value=0.1, step=0.1)
-                        fb_p = c_f2.number_input("PRU (€)", value=cw)
-                        fb_sh = c_f1.number_input("Objectif (Seuil Haut)", value=fb_p*1.2)
-                        fb_sb = c_f2.number_input("Alerte (Seuil Bas)", value=fb_p*0.8)
-                        
-                        cb1, cb2 = st.columns(2)
-                        if cb1.form_submit_button("✅ Confirmer l'achat"):
-                            # Ajout au portefeuille
-                            st.session_state.mon_portefeuille.append({
-                                "Nom": w['Nom'], "ISIN": w['ISIN'], "Ticker": w['Ticker'],
-                                "PRU": fb_p, "Qté": fb_q, "Date_Achat": str(date.today()),
-                                "Seuil_Haut": fb_sh, "Seuil_Bas": fb_sb
-                            })
-                            # Retrait de la watchlist
-                            st.session_state.ma_watchlist.pop(j)
-                            # Sauvegarde
-                            sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
-                            sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-                            st.session_state.form_actif = None
-                            st.rerun()
-                        if cb2.form_submit_button("Annuler"):
-                            st.session_state.form_actif = None
-                            st.rerun()
+if st.session_state.get('form_actif') == ("buying", j):
+    with st.form(f"f_trans_{j}"):
+        st.subheader(f"📥 Acheter {w['Nom']}")
+        c_f1, c_f2 = st.columns(2)
+        
+        # On utilise une clé unique pour que Streamlit garde la valeur en mémoire
+        fb_q = c_f1.number_input("Quantité", min_value=0.1, step=0.1, key=f"q_trans_{j}")
+        
+        # Correction ici : On garde cw en valeur initiale mais on laisse l'utilisateur changer
+        fb_p = c_f2.number_input("PRU (€)", value=cw, step=0.01, format="%.2f", key=f"pru_trans_{j}")
+        
+        # Les seuils se calculent maintenant sur fb_p (la saisie)
+        fb_sh = c_f1.number_input("Objectif (Seuil Haut)", value=fb_p*1.2, key=f"sh_trans_{j}")
+        fb_sb = c_f2.number_input("Alerte (Seuil Bas)", value=fb_p*0.8, key=f"sb_trans_{j}")
+        
+        cb1, cb2 = st.columns(2)
+        if cb1.form_submit_button("✅ Confirmer l'achat"):
+            # Ajout au portefeuille avec les valeurs saisies (fb_p)
+            st.session_state.mon_portefeuille.append({
+                "Nom": w['Nom'], 
+                "ISIN": w['ISIN'], 
+                "Ticker": w['Ticker'],
+                "PRU": fb_p, 
+                "Qté": fb_q, 
+                "Date_Achat": str(date.today()),
+                "Seuil_Haut": fb_sh, 
+                "Seuil_Bas": fb_sb
+            })
+            # Retrait de la watchlist
+            st.session_state.ma_watchlist.pop(j)
+            
+            # Sauvegarde
+            sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
+            sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+            
+            st.session_state.form_actif = None
+            st.success(f"Transfert réussi pour {w['Nom']} au PRU de {fb_p:.2f}€")
+            st.rerun()
+            
+        if cb2.form_submit_button("Annuler"):
+            st.session_state.form_actif = None
+            st.rerun()
             
             st.markdown("---")
 
@@ -355,6 +370,7 @@ with t5:
         
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
+
 
 
 
