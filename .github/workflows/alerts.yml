@@ -2,10 +2,10 @@ name: Surveillance Bourse Automatique
 
 on:
   schedule:
-    - cron: '0 8 * * 1-5'       # 9h00 Paris (Ouverture)
-    - cron: '*/30 8-15 * * 1-5'  # Toutes les 30 min (Check)
-    - cron: '40 16 * * 1-5'      # 17h40 Paris (Clôture)
-  workflow_dispatch:            # Bouton manuel
+    - cron: '0 8 * * 1-5'         # 9h00 Paris (Ouverture)
+    - cron: '*/30 8-15 * * 1-5'   # Toutes les 30 min (Check)
+    - cron: '40 16 * * 1-5'       # 17h40 Paris (Clôture)
+  workflow_dispatch:              # Bouton manuel
 
 jobs:
   alertes:
@@ -28,11 +28,16 @@ jobs:
           PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
           GH_REPO: ${{ secrets.GH_REPO }}
         run: |
-          HOUR=$(date +%H)
-          if [ "$HOUR" -eq "08" ]; then
+          # On récupère l'heure UTC et la minute pour être ultra précis
+          TIME_NOW=$(date +%H%M)
+          
+          if [ "$TIME_NOW" -eq "0800" ]; then
+            echo "Lancement Mode OUVERTURE"
             python check_alerts.py open
-          elif [ "$HOUR" -eq "16" ]; then
+          elif [ "$TIME_NOW" -ge "1630" ] && [ "$TIME_NOW" -le "1700" ]; then
+            echo "Lancement Mode CLÔTURE"
             python check_alerts.py close
           else
+            echo "Lancement Mode CHECK"
             python check_alerts.py check
           fi
