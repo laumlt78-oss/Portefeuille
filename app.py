@@ -136,8 +136,13 @@ with t1:
 
         s_haut = float(a.get('Seuil_Haut', 0)) if pd.notnull(a.get('Seuil_Haut')) else pru_val * 1.20
         
-        with st.expander(f"{icone} {a['Nom']} | {p['c_act']:.2f}€ | {p['pv']:+.2f}€"):
+        # --- MODIFICATION ICI : Calcul du % de plus-value ---
+        p_pv_pct = (p['pv'] / (pru_val * p['qte']) * 100) if (pru_val * p['qte']) > 0 else 0
+        
+        # Mise à jour du titre de l'expander pour inclure le %
+        with st.expander(f"{icone} {a['Nom']} | {p['c_act']:.2f}€ | {p['pv']:+.2f}€ ({p_pv_pct:+.2f}%)"):
             c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
+            # ... (le reste du code reste strictement identique)
             with c1:
                 st.write(f"**ISIN:** {a.get('ISIN')}")
                 st.write(f"**Ticker:** {a.get('Ticker')}")
@@ -370,6 +375,7 @@ with t5:
         
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
+
 
 
 
