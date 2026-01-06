@@ -27,13 +27,16 @@ jobs:
           PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
           PUSHOVER_API_TOKEN: ${{ secrets.PUSHOVER_API_TOKEN }}
           GH_REPO: ${{ secrets.GH_REPO }}
-        run: |
+       run: |
+          # Heure UTC (ex: 1640 pour 17h40 Paris)
           TIME_NOW=$(date +%H%M)
+          
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             python check_alerts.py close
           elif [ "$TIME_NOW" == "0800" ]; then
             python check_alerts.py open
-          elif [ "$TIME_NOW" -ge "1630" ] && [ "$TIME_NOW" -le "1700" ]; then
+          # On élargit : tout ce qui tourne entre 16h30 et 23h59 UTC sera un bilan de clôture
+          elif [ "$TIME_NOW" -ge "1630" ]; then
             python check_alerts.py close
           else
             python check_alerts.py check
