@@ -59,16 +59,40 @@ for key in ['mon_portefeuille', 'ma_watchlist', 'mes_dividendes']:
         st.session_state[key] = charger_csv_github(f"{key.replace('mon_','').replace('ma_','').replace('mes_','')}_data.csv")
 
 # --- 3. RÉCUPÉRATION DES PRIX ---
-all_tickers = list(set([x['Ticker'] for x in st.session_state.mon_portefeuille] + [x['Ticker'] for x in st.session_state.ma_watchlist]))
+# On crée un dictionnaire pour mapper Ticker -> ISIN afin de faciliter le repli
+ticker_to_isin = {x['Ticker']: x.get('ISIN') for x in st.session_state.mon_portefeuille + st.session_state.ma_watchlist}
+all_tickers = list(set(ticker_to_isin.keys()))
+
 prices = {}
 if all_tickers:
     for t in all_tickers:
+        p = 0.0
         try:
+            # 1. Tentative normale avec le Ticker
             tk = yf.Ticker(t)
             p = tk.fast_info.last_price
-            if p is None or p == 0: p = tk.history(period="1d")['Close'].iloc[-1]
-            prices[t] = float(p)
-        except: prices[t] = 0.0
+            
+            # 2. Si échec (None ou 0), tentative via l'historique du Ticker
+            if p is None or p <= 0:
+                hist = tk.history(period="1d")
+                if not hist.empty:
+                    p = hist['Close'].iloc[-1]
+            
+            # 3. LOGIQUE DE REPLI POUR OPCVM : Si toujours rien, on tente avec l'ISIN
+            if (p is None or p <= 0) and ticker_to_isin.get(t):
+                isin_code = ticker_to_isin[t]
+                # Sur Yahoo Finance, les ISIN sont souvent suivis d'une place boursière
+                # On tente l'ISIN pur, puis l'ISIN avec .PA (Paris)
+                for suffix in ["", ".PA"]:
+                    tk_isin = yf.Ticker(f"{isin_code}{suffix}")
+                    hist_isin = tk_isin.history(period="1d")
+                    if not hist_isin.empty:
+                        p = hist_isin['Close'].iloc[-1]
+                        break
+            
+            prices[t] = float(p) if p else 0.0
+        except:
+            prices[t] = 0.0
 
 # --- 4. CALCULS GLOBAUX ---
 total_actuel, total_achat = 0.0, 0.0
@@ -205,10 +229,36 @@ with t2:
         c_a, c_p = st.columns([2,1])
         choix = c_a.selectbox("Action", [x['Nom'] for x in st.session_state.mon_portefeuille])
         per = c_p.selectbox("Période", ["Aujourd'hui", "1 mois", "6 mois", "1 an", "5 ans"])
+        
+        # Récupération des infos de la valeur sélectionnée
         info = next(x for x in st.session_state.mon_portefeuille if x['Nom'] == choix)
-        map_p = {"Aujourd'hui": ("1d", "1m"), "1 mois": ("1mo", "60m"), "6 mois": ("6mo", "1d"), "1 an": ("1y", "1d"), "5 ans": ("5y", "1wk")}
-        d_h = yf.download(info['Ticker'], period=map_p[per][0], interval=map_p[per][1], progress=False)
-        tracer_courbe(d_h, f"{choix} ({per})", pru=info['PRU'], s_h=info.get('Seuil_Haut'), s_b=info.get('Seuil_Bas'))
+        ticker_initial = info['Ticker']
+        isin_secours = info.get('ISIN')
+        
+        map_p = {
+            "Aujourd'hui": ("1d", "1m"), 
+            "1 mois": ("1mo", "60m"), 
+            "6 mois": ("6mo", "1d"), 
+            "1 an": ("1y", "1d"), 
+            "5 ans": ("5y", "1wk")
+        }
+        
+        # 1. Tentative de téléchargement avec le Ticker
+        d_h = yf.download(ticker_initial, period=map_p[per][0], interval=map_p[per][1], progress=False)
+        
+        # 2. Si le dataframe est vide et qu'on a un ISIN, on tente avec l'ISIN
+        if (d_h is None or d_h.empty) and isin_secours:
+            # On tente l'ISIN pur ou avec .PA pour les fonds
+            for code_test in [isin_secours, f"{isin_secours}.PA"]:
+                d_h = yf.download(code_test, period=map_p[per][0], interval=map_p[per][1], progress=False)
+                if not d_h.empty:
+                    break
+        
+        # Affichage du graphique
+        if d_h is not None and not d_h.empty:
+            tracer_courbe(d_h, f"{choix} ({per})", pru=info['PRU'], s_h=info.get('Seuil_Haut'), s_b=info.get('Seuil_Bas'))
+        else:
+            st.error(f"Impossible de charger les données historiques pour {choix} (Ticker: {ticker_initial} / ISIN: {isin_secours})")
 
 with t3:
     st.subheader("📈 Évolution Portefeuille (1 mois)")
@@ -375,6 +425,7 @@ with t5:
         
         bilan.append({"Action": "🏆 TOTAL PORTEFEUILLE", "Investi": round(g_i,2), "P/L Bourse": round(g_a-g_i,2), "Dividendes": round(g_d,2), "Rendement Réel": f"{((g_a+g_d-g_i)/g_i*100):+.2f}%"})
         st.table(pd.DataFrame(bilan))
+
 
 
 
