@@ -72,7 +72,7 @@ for key in ['mon_portefeuille', 'ma_watchlist', 'mes_dividendes']:
     if key not in st.session_state:
         st.session_state[key] = charger_csv_github(f"{key.replace('mon_','').replace('ma_','').replace('mes_','')}_data.csv")
 
-# --- 3. RÉCUPÉRATION DES PRIX (Version Robustifiée) ---
+# --- 3. RÉCUPÉRATION DES PRIX (Priorité au Manuel) ---
 ticker_to_isin = {x['Ticker']: x.get('ISIN') for x in st.session_state.mon_portefeuille + st.session_state.ma_watchlist}
 all_tickers = list(set(ticker_to_isin.keys()))
 prices = {}
@@ -80,36 +80,38 @@ prices = {}
 if all_tickers:
     for t in all_tickers:
         p = 0.0
-        try:
-            # A. Tentative avec le Ticker (API standard)
-            tk = yf.Ticker(t)
-            hist = tk.history(period="7d")
-            if not hist.empty:
-                p = float(hist['Close'].iloc[-1])
-            
-            # B. Si échec, tentative via l'ISIN
-            if (p <= 0) and ticker_to_isin.get(t):
-                isin_code = ticker_to_isin[t]
-                for suffix in ["", ".PA"]:
-                    tk_isin = yf.Ticker(f"{isin_code}{suffix}")
-                    hist_isin = tk_isin.history(period="1d")
-                    if not hist_isin.empty:
-                        p = float(hist_isin['Close'].iloc[-1])
-                        break
-            
-            # C. Si toujours échec, tentative Scraping
-            if (p <= 0) and ticker_to_isin.get(t):
-                p = get_fallback_price(ticker_to_isin[t])
-            
-            # D. Ultime secours : Prix manuel enregistré
-            if (p is None or p <= 0):
-                for x in st.session_state.mon_portefeuille:
-                    if x['Ticker'] == t:
-                        p = float(x.get('Prix_Manuel', 0))
-                        break
-        except:
-            p = 0.0
-        prices[t] = float(p) if p else 0.0
+        
+        # A. PRIORITÉ : On vérifie d'abord si un prix manuel est saisi pour ce ticker
+        for x in st.session_state.mon_portefeuille:
+            if x['Ticker'] == t and float(x.get('Prix_Manuel', 0)) > 0:
+                p = float(x['Prix_Manuel'])
+                break
+        
+        # B. Si pas de prix manuel (p est toujours 0), on cherche sur Yahoo
+        if p == 0:
+            try:
+                tk = yf.Ticker(t)
+                hist = tk.history(period="7d")
+                if not hist.empty:
+                    p = float(hist['Close'].iloc[-1])
+                
+                # Tentative ISIN si Ticker échoue
+                if (p <= 0) and ticker_to_isin.get(t):
+                    isin_code = ticker_to_isin[t]
+                    for suffix in ["", ".PA"]:
+                        tk_isin = yf.Ticker(f"{isin_code}{suffix}")
+                        hist_isin = tk_isin.history(period="1d")
+                        if not hist_isin.empty:
+                            p = float(hist_isin['Close'].iloc[-1])
+                            break
+                
+                # Tentative Scraping si tout échoue
+                if (p <= 0) and ticker_to_isin.get(t):
+                    p = get_fallback_price(ticker_to_isin[t])
+            except:
+                p = 0.0
+                
+        prices[t] = float(p) if p else 0.00
 
 # --- 4. CALCULS GLOBAUX ---
 total_actuel, total_achat = 0.0, 0.0
@@ -392,4 +394,5 @@ with t5:
         st.table(pd.DataFrame(bilan))
     else:
         st.info("Portefeuille vide.")
+
 
