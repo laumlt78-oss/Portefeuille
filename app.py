@@ -236,32 +236,46 @@ with t2:
 
 with t3:
     st.subheader("📈 Évolution Portefeuille (1 mois)")
-    # On récupère les tickers valides (ceux qui ne sont pas à 0)
-    tickers_valides = [x['Ticker'] for x in st.session_state.mon_portefeuille if prices.get(x['Ticker'], 0) > 0]
+    tickers = [x['Ticker'] for x in st.session_state.mon_portefeuille]
     
-    if tickers_valides:
+    if tickers:
         try:
-            data = yf.download(tickers_valides, period="1mo", interval="1d", progress=False)['Close']
-            if not data.empty:
-                # Création d'une série temporelle vide à la taille des données reçues
-                v_tot = pd.Series(0.0, index=data.index)
+            # On télécharge les données pour tous les tickers d'un coup
+            data = yf.download(tickers, period="1mo", interval="1d", progress=False)
+            
+            # Nettoyage des données selon le format retourné par Yahoo
+            if isinstance(data.columns, pd.MultiIndex):
+                close_data = data['Close']
+            else:
+                close_data = data[['Close']] if len(tickers) == 1 else data['Close']
+
+            if not close_data.empty:
+                # Création d'un DataFrame de base avec les dates
+                v_tot = pd.Series(0.0, index=close_data.index)
+                
                 for a in st.session_state.mon_portefeuille:
                     t = a['Ticker']
                     q = float(a['Qté'])
-                    if isinstance(data, pd.DataFrame) and t in data.columns:
-                        v_tot += data[t] * q
-                    elif isinstance(data, pd.Series): # Si un seul ticker valide
-                        v_tot += data * q
+                    
+                    if t in close_data.columns:
+                        # On remplit les éventuels trous (NaN) par la dernière valeur connue
+                        serie_titre = close_data[t].ffill().bfill()
+                        v_tot += serie_titre * q
                     else:
-                        # Si ticker non trouvé dans l'historique (ex: OPCVM), on utilise le prix actuel constant
-                        v_tot += prices.get(t, 0) * q
+                        # Si le ticker n'est pas dans l'historique (cas des OPCVM)
+                        # On ajoute une valeur constante basée sur le prix actuel
+                        p_actuel = prices.get(t, 0.0)
+                        v_tot += p_actuel * q
                 
-                tracer_courbe(pd.DataFrame({'Close': v_tot}), "Valeur Totale du Portefeuille (€)")
+                # Conversion en DataFrame pour la fonction tracer_courbe
+                df_performance = pd.DataFrame({'Close': v_tot})
+                tracer_courbe(df_performance, "Valeur Totale (€)")
+            else:
+                st.warning("Yahoo Finance n'a retourné aucune donnée historique pour ces tickers.")
         except Exception as e:
-            st.error(f"Erreur lors du calcul de la performance : {e}")
+            st.error(f"Erreur technique lors du tracé : {e}")
     else:
-        st.info("Ajoutez des valeurs avec des tickers valides pour voir l'évolution.")
-
+        st.info("Ajoutez des actions dans votre portefeuille pour voir l'évolution.")
 with t4:
     st.header("🔍 Valeurs à surveiller (Watchlist)")
     
@@ -378,3 +392,4 @@ with t5:
         st.table(pd.DataFrame(bilan))
     else:
         st.info("Portefeuille vide.")
+
