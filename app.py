@@ -395,7 +395,7 @@ with t5:
         st.subheader("📊 Bilan global")
         st.table(pd.DataFrame(bilan))
         
-        # ---- NOUVELLE SECTION : GESTION INDIVIDUELLE DES DIVIDENDES ENREGISTRÉS ----
+       # ---- NOUVELLE SECTION : GESTION INDIVIDUELLE DES DIVIDENDES ENREGISTRÉS ----
         st.divider()
         st.subheader("📜 Historique et Modification des Dividendes")
         
@@ -404,7 +404,7 @@ with t5:
         else:
             # Affichage de chaque ligne de dividende avec options d'édition/suppression
             for idx, div in enumerate(st.session_state.mes_dividendes):
-                # Récupération du nom lisible de l'action via son Ticker
+                # Récupération du nom de l'action
                 nom_action = next((x['Nom'] for x in st.session_state.mon_portefeuille if x['Ticker'] == div['Ticker']), div['Ticker'])
                 
                 col_info, col_actions = st.columns([3, 1])
@@ -412,34 +412,37 @@ with t5:
                 
                 c_edit, c_del = col_actions.columns(2)
                 
-                # Gestionnaire de suppression 
+                # Suppression directe
                 if c_del.button("🗑️", key=f"del_div_{idx}"):
                     st.session_state.mes_dividendes.pop(idx)
                     sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
-                    st.success("Dividende supprimé avec succès !")
                     st.rerun()
                     
-                # Déclencheur du formulaire de modification
+                # Activation du mode édition
                 if c_edit.button("✏️", key=f"edit_div_{idx}"):
                     st.session_state[f"edit_mode_div_{idx}"] = True
+                    st.rerun()
                 
-                # Formulaire d'édition masqué/affiché en fonction du bouton de la ligne
+                # Si le mode édition est actif pour cette ligne (Boutons simples, pas de st.form)
                 if st.session_state.get(f"edit_mode_div_{idx}", False):
-                    with st.form(f"form_edit_div_{idx}"):
-                        st.caption(f"Modification du dividende pour {nom_action}")
-                        n_dt = st.selectbox("Changer l'Action", [x['Ticker'] for x in st.session_state.mon_portefeuille], index=[x['Ticker'] for x in st.session_state.mon_portefeuille].index(div['Ticker']))
-                        n_dm = st.number_input("Nouveau Montant Net (€)", min_value=0.01, value=float(div['Montant']))
-                        n_date = st.text_input("Date (AAAA-MM-JJ)", value=div['Date'])
+                    st.write(f"**📝 Modification du dividende pour {nom_action}**")
+                    
+                    n_dt = st.selectbox("Changer l'Action", [x['Ticker'] for x in st.session_state.mon_portefeuille], index=[x['Ticker'] for x in st.session_state.mon_portefeuille].index(div['Ticker']), key=f"val_ticker_{idx}")
+                    n_dm = st.number_input("Nouveau Montant Net (€)", min_value=0.01, value=float(div['Montant']), key=f"val_montant_{idx}")
+                    n_date = st.text_input("Date (AAAA-MM-JJ)", value=div['Date'], key=f"val_date_{idx}")
+                    
+                    col_form_btns = st.columns([2, 2, 8])
+                    
+                    if col_form_btns[0].button("💾 Sauvegarder", key=f"save_btn_{idx}"):
+                        st.session_state.mes_dividendes[idx] = {"Ticker": n_dt, "Date": n_date, "Montant": n_dm}
+                        sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
+                        st.session_state[f"edit_mode_div_{idx}"] = False
+                        st.rerun()
                         
-                        col_form_btns = st.columns(2)
-                        if col_form_btns.form_submit_button("Enregistrer les changements"):
-                            st.session_state.mes_dividendes[idx] = {"Ticker": n_dt, "Date": n_date, "Montant": n_dm}
-                            sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
-                            st.session_state[f"edit_mode_div_{idx}"] = False
-                            st.rerun()
-                        if col_form_btns.form_submit_button("Annuler"):
-                            st.session_state[f"edit_mode_div_{idx}"] = False
-                            st.rerun()
+                    if col_form_btns[1].button("❌ Annuler", key=f"cancel_btn_{idx}"):
+                        st.session_state[f"edit_mode_div_{idx}"] = False
+                        st.rerun()
+                    st.divider()
                             
     else:
         st.info("Portefeuille vide.")
