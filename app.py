@@ -304,4 +304,142 @@ with t4:
                         "Nom": wn, "ISIN": isin_w, "Ticker": wt.upper(), "Seuil_Alerte": ws
                     })
                     sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-                    st.session_state.w_form =
+                    st.session_state.w_form = False
+                    st.rerun()
+
+    st.divider()
+    
+    if not st.session_state.ma_watchlist:
+        st.info("Votre watchlist est vide.")
+    else:
+        for j, w in enumerate(st.session_state.ma_watchlist):
+            cw = prices.get(w['Ticker'], 0.0)
+            col1, col2, col3, col_btn = st.columns([3, 2, 2, 3.5])
+            col1.write(f"**{w['Nom']}** ({w['Ticker']})")
+            col2.write(f"Cours: {cw:.2f}€")
+            col3.write(f"Cible: {w.get('Seuil_Alerte', 0):.2f}€")
+            
+            c_buy, c_edit, c_del = col_btn.columns(3)
+            if c_buy.button("📥", key=f"btn_buy_{j}"): st.session_state.form_actif = ("buying", j)
+            if c_edit.button("✏️", key=f"btn_edit_{j}"): st.session_state.form_actif = ("editing", j)
+            if c_del.button("🗑️", key=f"btn_del_{j}"):
+                st.session_state.ma_watchlist.pop(j)
+                sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                st.rerun()
+
+            # Formulaire de transfert (Achat) simplifié
+            if st.session_state.get('form_actif') == ("buying", j):
+                with st.form(f"f_trans_{j}"):
+                    st.subheader(f"📥 Acheter {w['Nom']}")
+                    fb_q = st.number_input("Quantité", min_value=0.1, step=0.1)
+                    fb_p = st.number_input("PRU (€)", value=cw)
+                    if st.form_submit_button("Confirmer l'achat"):
+                        st.session_state.mon_portefeuille.append({
+                            "Nom": w['Nom'], "ISIN": w['ISIN'], "Ticker": w['Ticker'],
+                            "PRU": fb_p, "Qté": fb_q, "Date_Achat": str(date.today()),
+                            "Seuil_Haut": fb_p*1.2, "Seuil_Bas": fb_p*0.8, "Prix_Manuel": 0.0
+                        })
+                        st.session_state.ma_watchlist.pop(j)
+                        sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
+                        sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
+                        st.session_state.form_actif = None
+                        st.rerun()
+
+with t5:
+    st.header("💰 Valorisation & Dividendes")
+    
+    # Section Ajout Dividende
+    with st.expander("➕ Déclarer un dividende"):
+        with st.form("div_f"):
+            dt = st.selectbox("Action", [x['Ticker'] for x in st.session_state.mon_portefeuille])
+            dm = st.number_input("Montant Net (€)", min_value=0.01)
+            if st.form_submit_button("Enregistrer"):
+                st.session_state.mes_dividendes.append({"Ticker":dt, "Date":str(date.today()), "Montant":dm})
+                sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
+                st.rerun()
+
+    # Affichage du Tableau de Valorisation Global
+    if st.session_state.mon_portefeuille:
+        df_d = pd.DataFrame(st.session_state.mes_dividendes)
+        bilan = []
+        g_i, g_a, g_d = 0.0, 0.0, 0.0
+        
+        for a in st.session_state.mon_portefeuille:
+            p_a = prices.get(a['Ticker'], 0.0)
+            q = float(a['Qté'])
+            i = float(a['PRU']) * q
+            v = p_a * q
+            d = df_d[df_d['Ticker'] == a['Ticker']]['Montant'].sum() if not df_d.empty else 0.0
+            
+            g_i += i
+            g_a += v
+            g_d += d
+            
+            bilan.append({
+                "Action": a['Nom'],
+                "Investi": round(i, 2),
+                "P/L Bourse": round(v - i, 2),
+                "Dividendes": round(d, 2),
+                "Rendement Réel": f"{((v + d - i) / i * 100 if i > 0 else 0):+.2f}%"
+            })
+        
+        # Ligne de Total
+        bilan.append({
+            "Action": "🏆 TOTAL PORTEFEUILLE",
+            "Investi": round(g_i, 2),
+            "P/L Bourse": round(g_a - g_i, 2),
+            "Dividendes": round(g_d, 2),
+            "Rendement Réel": f"{((g_a + g_d - g_i) / g_i * 100 if g_i > 0 else 0):+.2f}%"
+        })
+        
+        st.subheader("📊 Bilan global")
+        st.table(pd.DataFrame(bilan))
+        
+        # ---- NOUVELLE SECTION : GESTION INDIVIDUELLE DES DIVIDENDES ENREGISTRÉS ----
+        st.divider()
+        st.subheader("📜 Historique et Modification des Dividendes")
+        
+        if not st.session_state.mes_dividendes:
+            st.info("Aucun dividende n'a encore été enregistré.")
+        else:
+            # Affichage de chaque ligne de dividende avec options d'édition/suppression
+            for idx, div in enumerate(st.session_state.mes_dividendes):
+                # Récupération du nom lisible de l'action via son Ticker
+                nom_action = next((x['Nom'] for x in st.session_state.mon_portefeuille if x['Ticker'] == div['Ticker']), div['Ticker'])
+                
+                col_info, col_actions = st.columns([3, 1])
+                col_info.write(f"📅 {div['Date']} | **{nom_action}** ({div['Ticker']}) : `{div['Montant']:.2f} €`")
+                
+                c_edit, c_del = col_actions.columns(2)
+                
+                # Gestionnaire de suppression 
+                if c_del.button("🗑️", key=f"del_div_{idx}"):
+                    st.session_state.mes_dividendes.pop(idx)
+                    sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
+                    st.success("Dividende supprimé avec succès !")
+                    st.rerun()
+                    
+                # Déclencheur du formulaire de modification
+                if c_edit.button("✏️", key=f"edit_div_{idx}"):
+                    st.session_state[f"edit_mode_div_{idx}"] = True
+                
+                # Formulaire d'édition masqué/affiché en fonction du bouton de la ligne
+                if st.session_state.get(f"edit_mode_div_{idx}", False):
+                    with st.form(f"form_edit_div_{idx}"):
+                        st.caption(f"Modification du dividende pour {nom_action}")
+                        n_dt = st.selectbox("Changer l'Action", [x['Ticker'] for x in st.session_state.mon_portefeuille], index=[x['Ticker'] for x in st.session_state.mon_portefeuille].index(div['Ticker']))
+                        n_dm = st.number_input("Nouveau Montant Net (€)", min_value=0.01, value=float(div['Montant']))
+                        n_date = st.text_input("Date (AAAA-MM-JJ)", value=div['Date'])
+                        
+                        col_form_btns = st.columns(2)
+                        if col_form_btns.form_submit_button("Enregistrer les changements"):
+                            st.session_state.mes_dividendes[idx] = {"Ticker": n_dt, "Date": n_date, "Montant": n_dm}
+                            sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
+                            st.session_state[f"edit_mode_div_{idx}"] = False
+                            st.rerun()
+                        if col_form_btns.form_submit_button("Annuler"):
+                            st.session_state[f"edit_mode_div_{idx}"] = False
+                            st.rerun()
+                            
+    else:
+        st.info("Portefeuille vide.")
