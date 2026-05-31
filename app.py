@@ -278,6 +278,7 @@ with t3:
             st.error(f"Erreur technique lors du tracé : {e}")
     else:
         st.info("Ajoutez des actions dans votre portefeuille pour voir l'évolution.")
+
 with t4:
     st.header("🔍 Valeurs à surveiller (Watchlist)")
     
@@ -303,96 +304,4 @@ with t4:
                         "Nom": wn, "ISIN": isin_w, "Ticker": wt.upper(), "Seuil_Alerte": ws
                     })
                     sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-                    st.session_state.w_form = False
-                    st.rerun()
-
-    st.divider()
-    
-    if not st.session_state.ma_watchlist:
-        st.info("Votre watchlist est vide.")
-    else:
-        for j, w in enumerate(st.session_state.ma_watchlist):
-            cw = prices.get(w['Ticker'], 0.0)
-            col1, col2, col3, col_btn = st.columns([3, 2, 2, 3.5])
-            col1.write(f"**{w['Nom']}** ({w['Ticker']})")
-            col2.write(f"Cours: {cw:.2f}€")
-            col3.write(f"Cible: {w.get('Seuil_Alerte', 0):.2f}€")
-            
-            c_buy, c_edit, c_del = col_btn.columns(3)
-            if c_buy.button("📥", key=f"btn_buy_{j}"): st.session_state.form_actif = ("buying", j)
-            if c_edit.button("✏️", key=f"btn_edit_{j}"): st.session_state.form_actif = ("editing", j)
-            if c_del.button("🗑️", key=f"btn_del_{j}"):
-                st.session_state.ma_watchlist.pop(j)
-                sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-                st.rerun()
-
-            # Formulaire de transfert (Achat) simplifié
-            if st.session_state.get('form_actif') == ("buying", j):
-                with st.form(f"f_trans_{j}"):
-                    st.subheader(f"📥 Acheter {w['Nom']}")
-                    fb_q = st.number_input("Quantité", min_value=0.1, step=0.1)
-                    fb_p = st.number_input("PRU (€)", value=cw)
-                    if st.form_submit_button("Confirmer l'achat"):
-                        st.session_state.mon_portefeuille.append({
-                            "Nom": w['Nom'], "ISIN": w['ISIN'], "Ticker": w['Ticker'],
-                            "PRU": fb_p, "Qté": fb_q, "Date_Achat": str(date.today()),
-                            "Seuil_Haut": fb_p*1.2, "Seuil_Bas": fb_p*0.8, "Prix_Manuel": 0.0
-                        })
-                        st.session_state.ma_watchlist.pop(j)
-                        sauvegarder_csv_github(st.session_state.mon_portefeuille, "portefeuille_data.csv")
-                        sauvegarder_csv_github(st.session_state.ma_watchlist, "watchlist_data.csv")
-                        st.session_state.form_actif = None
-                        st.rerun()
-
-with t5:
-    st.header("💰 Valorisation & Dividendes")
-    
-    # Section Ajout Dividende
-    with st.expander("➕ Déclarer un dividende"):
-        with st.form("div_f"):
-            dt = st.selectbox("Action", [x['Ticker'] for x in st.session_state.mon_portefeuille])
-            dm = st.number_input("Montant Net (€)", min_value=0.01)
-            if st.form_submit_button("Enregistrer"):
-                st.session_state.mes_dividendes.append({"Ticker":dt, "Date":str(date.today()), "Montant":dm})
-                sauvegarder_csv_github(st.session_state.mes_dividendes, "dividendes_data.csv")
-                st.rerun()
-
-    # Affichage du Tableau de Valorisation
-    if st.session_state.mon_portefeuille:
-        df_d = pd.DataFrame(st.session_state.mes_dividendes)
-        bilan = []
-        g_i, g_a, g_d = 0.0, 0.0, 0.0
-        
-        for a in st.session_state.mon_portefeuille:
-            p_a = prices.get(a['Ticker'], 0.0)
-            q = float(a['Qté'])
-            i = float(a['PRU']) * q
-            v = p_a * q
-            d = df_d[df_d['Ticker'] == a['Ticker']]['Montant'].sum() if not df_d.empty else 0.0
-            
-            g_i += i
-            g_a += v
-            g_d += d
-            
-            bilan.append({
-                "Action": a['Nom'],
-                "Investi": round(i, 2),
-                "P/L Bourse": round(v - i, 2),
-                "Dividendes": round(d, 2),
-                "Rendement Réel": f"{((v + d - i) / i * 100 if i > 0 else 0):+.2f}%"
-            })
-        
-        # Ligne de Total
-        bilan.append({
-            "Action": "🏆 TOTAL PORTEFEUILLE",
-            "Investi": round(g_i, 2),
-            "P/L Bourse": round(g_a - g_i, 2),
-            "Dividendes": round(g_d, 2),
-            "Rendement Réel": f"{((g_a + g_d - g_i) / g_i * 100 if g_i > 0 else 0):+.2f}%"
-        })
-        
-        st.table(pd.DataFrame(bilan))
-    else:
-        st.info("Portefeuille vide.")
-
-
+                    st.session_state.w_form =
